@@ -25,3 +25,8 @@ dependencies = [
 
 [project.scripts]
 dxf2kml = "dxf2kml.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dxf2kml*", "web_app*"]
+
