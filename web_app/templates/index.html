@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Convert DXF to KML Online (AutoCAD to Google Earth Converter)</title>
+  <meta name="description" content="Convert AutoCAD DWG and DXF survey drawings into Google Earth KML format with color preservation, layer folders, and coordinate projection.">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <!-- Google Fonts & Leaflet CSS -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+
+  <!-- Navbar -->
+  <header class="navbar">
+    <a href="/" class="navbar-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3.6 9h16.8M3.6 15h16.8" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18" />
+      </svg>
+      <span>CAD2KML Pro</span>
+    </a>
+    <div class="navbar-links">
+      <a href="/">Home</a>
+      <a href="#converter">Converter</a>
+      <a href="/docs">API Docs</a>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="container" id="converter">
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumbs">
+      <a href="/">Home</a> <span>›</span> AutoCAD DXF to KML/KMZ
+    </div>
+
+    <!-- Page Header -->
+    <div class="page-header">
+      <h1>Convert DXF to KML Online (AutoCAD to Google Earth Converter)</h1>
+      <p>If you are working with AutoCAD drawings and want to view them in Google Earth or any mapping tool, convert your DXF files into KML format. DXF is mainly used for CAD design, while KML is used for map visualization. This tool transforms CAD drawings into map-ready Google Earth files.</p>
+    </div>
+
+    <!-- Converter Dual Panel Grid -->
+    <div class="converter-grid">
+
+      <!-- Left Panel: Control & Upload Card -->
+      <div class="control-card">
+        <div class="card-header">
+          <h2 class="card-title">AutoCAD DXF to KML</h2>
+          <span class="badge-standard">Mapping Standard: WGS84</span>
+        </div>
+        <p class="card-subtitle">Project CAD drawings directly into Google Earth with color preservation.</p>
+
+        <!-- Help Box for DWG Users -->
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin-bottom: 24px; display: flex; gap: 12px; align-items: flex-start;">
+            <div style="color: #f59e0b; margin-top: 2px;">
+                <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+            <div>
+                <h4 style="margin: 0 0 4px 0; color: #92400e; font-size: 14px; font-weight: 700;">Have a .DWG file?</h4>
+                <p style="margin: 0; color: #b45309; font-size: 14px; line-height: 1.5;">
+                    This tool requires <strong>.DXF</strong> files (the open standard for CAD data).<br>
+                    To convert your DWG:<br>
+                    1. Open your DWG file in AutoCAD (or any free CAD viewer).<br>
+                    2. Go to <strong>File &gt; Save As...</strong><br>
+                    3. Select <strong>AutoCAD DXF (*.dxf)</strong> from the file type dropdown.<br>
+                    4. Save and upload the resulting DXF file here!
+                </p>
+            </div>
+        </div>
+
+        <form id="convertForm">
+
+          <!-- Source UTM Projection Zone Picker -->
+          <div class="form-group">
+            <div class="label-row">
+              <label class="form-label" for="input_epsg">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                Source UTM Projection Zone
+              </label>
+              <a href="#" class="map-picker-btn" id="selectLocationLink">📍 Select Location on MAP</a>
+            </div>
+
+            <select id="input_epsg" name="input_epsg" class="select-box">
+              <option value="EPSG:32644" selected>44 (78°E - 84°E - Northern Hemisphere) / EPSG:32644</option>
+              <option value="EPSG:32643">43 (72°E - 78°E - Northern Hemisphere) / EPSG:32643</option>
+              <option value="EPSG:32645">45 (84°E - 90°E - Northern Hemisphere) / EPSG:32645</option>
+              <option value="EPSG:32642">42 (66°E - 72°E - Northern Hemisphere) / EPSG:32642</option>
+              <option value="EPSG:32641">41 (60°E - 66°E - Northern Hemisphere) / EPSG:32641</option>
+              <option value="EPSG:32646">46 (90°E - 96°E - Northern Hemisphere) / EPSG:32646</option>
+              <option value="EPSG:32638">38 (42°E - 48°E - Northern Hemisphere) / EPSG:32638</option>
+              <option value="EPSG:32639">39 (48°E - 54°E - Northern Hemisphere) / EPSG:32639</option>
+              <option value="EPSG:32640">40 (54°E - 60°E - Northern Hemisphere) / EPSG:32640</option>
+              <option value="EPSG:32633">33 (12°E - 18°E - Northern Hemisphere) / EPSG:32633</option>
+              <option value="EPSG:32618">18 (78°W - 72°W - Northern Hemisphere) / EPSG:32618</option>
+            </select>
+
+            <div class="tip-box">
+              Tip: Click <strong>Select Location on MAP</strong> or <strong>Get My Location</strong> on the right map to auto-detect your UTM zone!
+            </div>
+          </div>
+
+          <!-- Conversion Type Pills -->
+          <div class="form-group">
+            <label class="form-label" style="margin-bottom:0.5rem;">Conversion Type</label>
+            <div class="pills-container">
+              <button type="button" class="pill-btn" id="pillStandard" onclick="setConversionType('standard')">Standard Conversion</button>
+              <button type="button" class="pill-btn active" id="pillRaw" onclick="setConversionType('raw')">Raw Conversion</button>
+            </div>
+            <input type="hidden" id="conversion_type" name="conversion_type" value="raw">
+
+            <div class="info-banner" id="typeInfoBanner">
+              <strong id="typeInfoTitle">Raw Conversion Selected</strong>
+              <span id="typeInfoDesc">Full detail export. Includes text labels, exploded block references, circles, points, and complex polyline geometries.</span>
+            </div>
+          </div>
+
+          <!-- File Upload Dropzone -->
+          <div class="form-group">
+            <label class="form-label">Upload AutoCAD DXF File</label>
+            <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+              <svg class="dropzone-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+              </svg>
+              <div class="dropzone-title">Click to upload or drag & drop</div>
+              <div class="dropzone-sub">Requires AutoCAD .DXF file format (Max 50MB)</div>
+              <input type="file" id="fileInput" name="file" accept=".dxf" style="display: none;">
+            </div>
+
+            <!-- Uploaded File Card -->
+            <div class="file-card" id="fileCard" style="display: none;">
+              <div class="file-info">
+                <div class="file-icon">
+                  <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                </div>
+                <div>
+                  <div class="file-name" id="fileName">drawing.dxf</div>
+                  <div class="file-size" id="fileSize">266.7 KB</div>
+                </div>
+              </div>
+              <div class="file-remove" onclick="removeSelectedFile()" title="Remove file">✕</div>
+            </div>
+          </div>
+
+          <!-- Advanced Settings Accordion -->
+          <div class="accordion-toggle" onclick="toggleAccordion()">
+            <span>⚙️ Advanced Conversion Options</span>
+            <span id="accordionArrow">▼</span>
+          </div>
+
+          <div class="accordion-content" id="accordionContent">
+            <div class="checkbox-row">
+              <input type="checkbox" id="merge_lines" name="merge_lines" checked>
+              <label for="merge_lines">Merge touching line segments into polylines</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="ignore_large_polygons" name="ignore_large_polygons" checked>
+              <label for="ignore_large_polygons">Filter out outer sheet layout borders</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="export_text" name="export_text" checked>
+              <label for="export_text">Export TEXT and MTEXT labels</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="export_points" name="export_points" checked>
+              <label for="export_points">Export POINT placemarks</label>
+            </div>
+            <div class="slider-group">
+              <label for="label_scale">Label Text Scale: <span id="scaleVal">0.5</span></label>
+              <input type="range" id="label_scale" name="label_scale" min="0.2" max="1.5" step="0.1" value="0.5" class="slider-input" oninput="document.getElementById('scaleVal').innerText=this.value">
+            </div>
+          </div>
+
+          <!-- Convert Action Button -->
+          <button type="submit" class="btn-primary" id="convertBtn">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Convert DXF to KML
+          </button>
+
+        </form>
+
+        <!-- Success Result Banner -->
+        <div class="success-banner" id="successBanner">
+          <div class="success-title">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Map File Successfully Generated!
+          </div>
+          <div class="success-sub" id="successSummary">
+            Successfully projected shapes and markers into Google Earth format.
+          </div>
+          <a href="#" id="downloadBtn" class="btn-download">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Download KML File
+          </a>
+        </div>
+
+      </div>
+
+      <!-- Right Panel: Interactive Satellite Map -->
+      <div class="map-card">
+        <div class="map-header-bar">
+          <div class="map-search-box">
+            <input type="text" id="mapSearchInput" class="map-search-input" placeholder="Search location (e.g. Kurnool, Hyderabad, London)...">
+            <button type="button" class="map-search-btn" onclick="searchLocation()">Search</button>
+          </div>
+          <button type="button" class="btn-location" onclick="getUserLocation()">
+            📍 Get My Location
+          </button>
+        </div>
+
+        <div id="map"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

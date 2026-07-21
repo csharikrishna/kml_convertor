@@ -1,0 +1,24 @@
+# DXF2KML Sample Configuration File
+
+input_epsg: "EPSG:32644"
+output_epsg: "EPSG:4326"
+
+# Processing options
+merge_lines: true
+merge_distance: 0.05
+ignore_large_polygons: true
+export_text: true
+export_points: true
+export_hatches: true
+
+# Boundary & layout border detection thresholds
+max_segment_length: 5000.0
+max_area_ratio: 0.7
+border_z_score_threshold: 3.0
+
+# Styling options
+default_line_width: 2.5
+default_line_color: "ff0000ff"
+default_point_scale: 0.8
+default_label_scale: 1.0
+point_icon_url: "http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png"

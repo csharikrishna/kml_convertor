@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest & Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# CAD temporary lock & backup files
+*.bak
+*.dwl
+*.dwl2
+*.log
+
+# Deployment & OS
+.DS_Store
+Thumbs.db
+
+# Temporary web uploads & generated KML output
+tmp/
+temp/
+dxf2kml_web/
