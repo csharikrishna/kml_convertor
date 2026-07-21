@@ -2,6 +2,7 @@ services:
   - type: web
     name: cad2kml-converter
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt && pip install -e .
     startCommand: uvicorn web_app.app:app --host 0.0.0.0 --port $PORT
     envVars:
