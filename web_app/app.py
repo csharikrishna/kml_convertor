@@ -44,7 +44,37 @@ def calculate_utm_epsg(lat: float, lon: float) -> Tuple[int, str]:
     return epsg_code, desc
 
 
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
+import time
+
+def cleanup_temp_files(max_age_seconds: int = 3600):
+    """Purge temporary conversion files older than max_age_seconds."""
+    now = time.time()
+    count = 0
+    try:
+        for item in TEMP_STORAGE.glob("*"):
+            if item.is_file():
+                if now - item.stat().st_mtime > max_age_seconds:
+                    try:
+                        item.unlink()
+                        count += 1
+                    except Exception as ex:
+                        logger.warning(f"Failed to delete temp file {item}: {ex}")
+        if count > 0:
+            logger.info(f"Cleaned up {count} expired temporary files.")
+    except Exception as e:
+        logger.warning(f"Error during temp file cleanup: {e}")
+
+
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """Health check endpoint for container probes and load balancers."""
+    file_count = len(list(TEMP_STORAGE.glob("*")))
+    return {
+        "status": "healthy",
+        "service": "dxf2kml-api",
+        "temp_files_cached": file_count
+    }
+
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -102,8 +132,8 @@ async def convert_file(
     # Configure conversion settings
     epsg_code = input_epsg if input_epsg.upper().startswith("EPSG:") else f"EPSG:{input_epsg}"
     
-    # Adjust options based on conversion type
-    is_raw = conversion_type.lower() == "raw"
+    # Run background temp file cleanup
+    cleanup_temp_files(max_age_seconds=3600)
     
     cfg = ConverterConfig(
         input_epsg=epsg_code,
@@ -111,8 +141,8 @@ async def convert_file(
         merge_lines=merge_lines,
         ignore_large_polygons=ignore_large_polygons,
         default_label_scale=label_scale,
-        export_text=export_text if is_raw else True,
-        export_points=export_points if is_raw else True,
+        export_text=export_text,
+        export_points=export_points,
     )
 
     try:

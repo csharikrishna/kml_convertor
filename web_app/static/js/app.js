@@ -255,6 +255,10 @@ function setupFormSubmit() {
     try {
       const formData = new FormData(form);
       formData.set('file', uploadedFile);
+      formData.set('merge_lines', document.getElementById('merge_lines').checked ? 'true' : 'false');
+      formData.set('ignore_large_polygons', document.getElementById('ignore_large_polygons').checked ? 'true' : 'false');
+      formData.set('export_text', document.getElementById('export_text').checked ? 'true' : 'false');
+      formData.set('export_points', document.getElementById('export_points').checked ? 'true' : 'false');
 
       const res = await fetch('/api/convert', {
         method: 'POST',
