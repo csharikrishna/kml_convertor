@@ -1,6 +1,11 @@
 """
 Style management for DXF to KML conversion.
 Maps AutoCAD entity colors and lineweight to KML styles.
+
+Improvements:
+- Polygon fill support with configurable color and opacity
+- Line width multiplier support
+- Inline color override support for MTEXT labels
 """
 
 from typing import Dict, Optional, Tuple
@@ -49,15 +54,16 @@ class StyleManager:
         width: Optional[float] = None
     ) -> simplekml.Style:
         """Get or create cached LineString style."""
-        width = width if (width and width > 0) else self.config.default_line_width
-        key = f"line_{kml_color}_{width}"
+        base_width = width if (width and width > 0) else self.config.default_line_width
+        final_width = base_width * self.config.line_width_multiplier
+        key = f"line_{kml_color}_{final_width}"
 
         if key in self._style_cache:
             return self._style_cache[key]
 
         style = simplekml.Style()
         style.linestyle.color = kml_color
-        style.linestyle.width = width
+        style.linestyle.width = final_width
         self._style_cache[key] = style
         return style
 
@@ -65,27 +71,40 @@ class StyleManager:
         self,
         kml_color: str,
         width: Optional[float] = None,
-        fill: bool = False,
-        fill_alpha: int = 100
+        fill: Optional[bool] = None,
+        fill_color: Optional[str] = None,
+        fill_opacity: Optional[int] = None
     ) -> simplekml.Style:
-        """Get or create cached Polygon style."""
-        width = width if (width and width > 0) else self.config.default_line_width
-        key = f"poly_{kml_color}_{width}_{fill}_{fill_alpha}"
+        """Get or create cached Polygon style with optional fill."""
+        base_width = width if (width and width > 0) else self.config.default_line_width
+        final_width = base_width * self.config.line_width_multiplier
+        
+        # Use config defaults if not explicitly provided
+        should_fill = fill if fill is not None else self.config.fill_polygons
+        f_color = fill_color if fill_color else self.config.fill_color
+        f_opacity = fill_opacity if fill_opacity is not None else self.config.fill_opacity
+        
+        key = f"poly_{kml_color}_{final_width}_{should_fill}_{f_color}_{f_opacity}"
 
         if key in self._style_cache:
             return self._style_cache[key]
 
         style = simplekml.Style()
         style.linestyle.color = kml_color
-        style.linestyle.width = width
-        style.polystyle.fill = 1 if fill else 0
+        style.linestyle.width = final_width
         style.polystyle.outline = 1
-        if fill and len(kml_color) == 8:
-            # Adjust alpha for fill
-            r_g_b = kml_color[2:]
-            fill_kml_color = f"{fill_alpha:02x}{r_g_b}"
-            style.polystyle.color = fill_kml_color
+        
+        if should_fill:
+            style.polystyle.fill = 1
+            # Build fill color with opacity
+            if len(f_color) == 8:
+                # Override the alpha channel with fill_opacity
+                color_part = f_color[2:]  # bbggrr
+                style.polystyle.color = f"{f_opacity:02x}{color_part}"
+            else:
+                style.polystyle.color = f_color
         else:
+            style.polystyle.fill = 0
             style.polystyle.color = kml_color
 
         self._style_cache[key] = style

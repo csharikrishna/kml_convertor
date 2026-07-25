@@ -84,6 +84,8 @@ class GeometryEngine:
 
         for layer, p_list in layer_paths.items():
             lines_to_merge: List[LineString] = []
+            # Track per-linestring color for accurate no-merge mode
+            line_color_map: Dict[int, ParsedPath] = {}  # index -> source ParsedPath
 
             for p in p_list:
                 if len(p.vertices) < 2:
@@ -111,21 +113,23 @@ class GeometryEngine:
                     except Exception:
                         pass
 
+                line_color_map[len(lines_to_merge)] = p
                 lines_to_merge.append(ls)
 
             if not lines_to_merge:
                 continue
 
             if not self.config.merge_lines:
-                # Without line merging, convert each LineString directly
-                for ls in lines_to_merge:
+                # Without line merging, preserve each path's individual color
+                for idx, ls in enumerate(lines_to_merge):
+                    source_path = line_color_map.get(idx, p_list[0])
                     results.append(ReconstructedGeometry(
                         layer=layer,
                         geometry_type="LineString",
                         geom=ls,
-                        color_aci=p_list[0].color_aci,
-                        rgb_color=p_list[0].rgb_color,
-                        lineweight=p_list[0].lineweight
+                        color_aci=source_path.color_aci,
+                        rgb_color=source_path.rgb_color,
+                        lineweight=source_path.lineweight
                     ))
                     stats.output_linestrings_count += 1
                 continue

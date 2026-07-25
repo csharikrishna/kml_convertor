@@ -19,13 +19,19 @@ class ConverterConfig(BaseModel):
     # Processing Toggles
     merge_lines: bool = Field(default=True, description="Merge touching line segments into continuous LineStrings/Polygons")
     merge_distance: float = Field(default=0.05, description="Maximum distance threshold (in input CRS units) to merge line vertices")
+    cross_layer_merge: bool = Field(default=False, description="Allow merging connected line segments across different layers")
     ignore_large_polygons: bool = Field(default=True, description="Filter out sheet borders and construction frames")
     export_text: bool = Field(default=True, description="Export TEXT and MTEXT entities as KML Placemarks")
     export_points: bool = Field(default=True, description="Export POINT entities as Google Earth Placemarks")
     export_hatches: bool = Field(default=True, description="Export HATCH entity boundary paths")
 
+    # Text / Font Accuracy
+    auto_scale_text: bool = Field(default=True, description="Automatically scale KML labels based on DXF text height")
+    reference_text_height: float = Field(default=2.5, description="Reference DXF text height (in drawing units) for relative KML label scaling")
+
     # Tessellation & Geometry parameters
     tessellation_segments: int = Field(default=32, description="Number of segments for curve/arc/spline discretization")
+    flattening_distance: float = Field(default=0.05, description="Maximum deviation distance for curve flattening/tessellation")
     
     # Boundary / Frame detection thresholds
     max_segment_length: Optional[float] = Field(default=5000.0, description="Max allowed length for a single segment before filtering as frame")
@@ -37,10 +43,16 @@ class ConverterConfig(BaseModel):
     default_line_color: str = Field(default="ff0000ff", description="Default KML color in AABBGGRR hex format")
     default_point_scale: float = Field(default=0.8, description="Default KML Placemark icon scale")
     default_label_scale: float = Field(default=0.7, description="Default KML Label text scale (e.g. 0.5 to 1.0)")
+    line_width_multiplier: float = Field(default=1.0, description="Multiplier for all KML line widths")
     point_icon_url: str = Field(
         default="http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png",
         description="Google Earth icon URL for points"
     )
+
+    # Polygon fill styling
+    fill_polygons: bool = Field(default=False, description="Fill closed polygons with color")
+    fill_color: str = Field(default="ff0000ff", description="Polygon fill color in KML AABBGGRR hex format")
+    fill_opacity: int = Field(default=76, description="Polygon fill opacity (0-255)")
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> "ConverterConfig":

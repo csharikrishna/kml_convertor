@@ -4,8 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Convert DXF to KML Online (AutoCAD to Google Earth Converter)</title>
-  <meta name="description" content="Convert AutoCAD DWG and DXF survey drawings into Google Earth KML format with color preservation, layer folders, and coordinate projection.">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <meta name="description" content="Free, accurate AutoCAD DWG and DXF to Google Earth KML converter with color preservation, dynamic text scaling, polygon fill, and layer folders.">
+  <meta property="og:title" content="CAD2KML Pro — Free DXF to KML Converter">
+  <meta property="og:description" content="Convert AutoCAD DXF survey drawings into Google Earth KML with industry-leading accuracy. Free, no signup required.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="/static/css/style.css?v=2.1">
   <!-- Google Fonts & Leaflet CSS -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -56,23 +59,7 @@
         </div>
         <p class="card-subtitle">Project CAD drawings directly into Google Earth with color preservation.</p>
 
-        <!-- Help Box for DWG Users -->
-        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin-bottom: 24px; display: flex; gap: 12px; align-items: flex-start;">
-            <div style="color: #f59e0b; margin-top: 2px;">
-                <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            </div>
-            <div>
-                <h4 style="margin: 0 0 4px 0; color: #92400e; font-size: 14px; font-weight: 700;">Have a .DWG file?</h4>
-                <p style="margin: 0; color: #b45309; font-size: 14px; line-height: 1.5;">
-                    This tool requires <strong>.DXF</strong> files (the open standard for CAD data).<br>
-                    To convert your DWG:<br>
-                    1. Open your DWG file in AutoCAD (or any free CAD viewer).<br>
-                    2. Go to <strong>File &gt; Save As...</strong><br>
-                    3. Select <strong>AutoCAD DXF (*.dxf)</strong> from the file type dropdown.<br>
-                    4. Save and upload the resulting DXF file here!
-                </p>
-            </div>
-        </div>
+        <!-- Help Box for DWG Users (removed since DWG is now supported) -->
 
         <form id="convertForm">
 
@@ -122,14 +109,14 @@
 
           <!-- File Upload Dropzone -->
           <div class="form-group">
-            <label class="form-label">Upload AutoCAD DXF File</label>
+            <label class="form-label">Upload AutoCAD DXF or DWG File</label>
             <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
               <svg class="dropzone-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
               </svg>
               <div class="dropzone-title">Click to upload or drag & drop</div>
-              <div class="dropzone-sub">Requires AutoCAD .DXF file format (Max 50MB)</div>
-              <input type="file" id="fileInput" name="file" accept=".dxf" style="display: none;">
+              <div class="dropzone-sub">Supports AutoCAD .DXF and .DWG files (Max 50MB)</div>
+              <input type="file" id="fileInput" name="file" accept=".dxf,.dwg" style="display: none;">
             </div>
 
             <!-- Uploaded File Card -->
@@ -170,6 +157,41 @@
               <input type="checkbox" id="export_points" name="export_points" checked>
               <label for="export_points">Export POINT placemarks</label>
             </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="auto_scale_text" name="auto_scale_text" checked>
+              <label for="auto_scale_text">Auto-scale labels based on DXF text height</label>
+            </div>
+            
+            <div class="settings-divider"></div>
+            <label class="form-label" style="font-size: 0.82rem; margin-bottom: 0.4rem;">📦 Output Format</label>
+            <div class="checkbox-row">
+              <select id="output_format" name="output_format" class="select-box" style="padding: 0.4rem; font-size: 0.85rem;">
+                <option value="kml" selected>KML (Standard Google Earth format)</option>
+                <option value="kmz">KMZ (Compressed KML, smaller file size)</option>
+              </select>
+            </div>
+            
+            <div class="settings-divider"></div>
+            <label class="form-label" style="font-size: 0.82rem; margin-bottom: 0.4rem;">📐 Polygon Fill Settings</label>
+            
+            <div class="checkbox-row">
+              <input type="checkbox" id="fill_polygons" name="fill_polygons">
+              <label for="fill_polygons">Fill closed polygons with color</label>
+            </div>
+            <div class="color-row" id="fillColorRow" style="display:none;">
+              <div class="color-picker-group">
+                <label for="fill_color">Fill Color</label>
+                <input type="color" id="fill_color" name="fill_color" value="#ff0000" class="color-input">
+              </div>
+              <div class="slider-group" style="flex:1;">
+                <label for="fill_opacity">Fill Opacity: <span id="fillOpacityVal">30%</span></label>
+                <input type="range" id="fill_opacity" name="fill_opacity" min="0" max="100" step="5" value="30" class="slider-input" oninput="document.getElementById('fillOpacityVal').innerText=this.value+'%'">
+              </div>
+            </div>
+
+            <div class="settings-divider"></div>
+            <label class="form-label" style="font-size: 0.82rem; margin-bottom: 0.4rem;">🏷️ Label Settings</label>
+            
             <div class="slider-group">
               <label for="label_scale">Label Text Scale: <span id="scaleVal">0.5</span></label>
               <input type="range" id="label_scale" name="label_scale" min="0.2" max="1.5" step="0.1" value="0.5" class="slider-input" oninput="document.getElementById('scaleVal').innerText=this.value">
@@ -183,6 +205,15 @@
           </button>
 
         </form>
+
+        <!-- Error Banner -->
+        <div class="error-banner" id="errorBanner">
+          <div class="error-title">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <span id="errorTitle">Conversion Error</span>
+          </div>
+          <div class="error-sub" id="errorMessage"></div>
+        </div>
 
         <!-- Success Result Banner -->
         <div class="success-banner" id="successBanner">
@@ -214,13 +245,38 @@
         </div>
 
         <div id="map"></div>
+
+        <!-- Layer control panel (populated after conversion) -->
+        <div class="layer-panel" id="layerPanel" style="display:none;">
+          <div class="layer-panel-header">
+            <span>📂 Layers</span>
+            <button class="layer-panel-toggle" onclick="toggleLayerPanel()">−</button>
+          </div>
+          <div class="layer-panel-body" id="layerPanelBody"></div>
+        </div>
       </div>
 
     </div>
   </main>
 
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong>CAD2KML Pro</strong> — Free DXF to KML Converter
+      </div>
+      <div class="footer-links">
+        <a href="/docs">API Documentation</a>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+        <span class="footer-sep">·</span>
+        <span class="footer-version">v2.0.0</span>
+      </div>
+    </div>
+  </footer>
+
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=2.1"></script>
 </body>
 </html>

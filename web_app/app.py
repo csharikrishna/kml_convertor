@@ -6,9 +6,10 @@ from pathlib import Path
 import tempfile
 import uuid
 import math
+import shutil
 from typing import Optional, Dict, Any, Tuple
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
@@ -20,6 +21,7 @@ from dxf2kml.geometry import GeometryEngine, ReconstructedGeometry
 from dxf2kml.filters import BoundaryFilter
 from dxf2kml.transformer import CoordinateTransformer
 from dxf2kml.exporter import KMLExporter
+from dxf2kml.kmz_exporter import save_as_kmz
 from dxf2kml.utils import aci_to_rgb, rgb_to_kml_hex
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -78,7 +80,7 @@ async def health_check():
 
 @app.get("/favicon.ico")
 async def favicon():
-    return Response(status_code=204)
+    return Response(status_code=204, content=b"")
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -97,6 +99,12 @@ async def convert_file(
     label_scale: float = Form(0.5),
     export_text: bool = Form(True),
     export_points: bool = Form(True),
+    auto_scale_text: bool = Form(True),
+    fill_polygons: bool = Form(False),
+    fill_color: str = Form("#ff0000"),
+    fill_opacity: float = Form(0.3),
+    output_format: str = Form("kml"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """
     Endpoint to process uploaded DXF/DWG file, run conversion,
@@ -117,24 +125,41 @@ async def convert_file(
 
     file_id = str(uuid.uuid4())
     upload_path = TEMP_STORAGE / f"{file_id}_{filename}"
-    kml_filename = f"{Path(filename).stem}.kml"
-    output_kml_path = TEMP_STORAGE / f"{file_id}_{kml_filename}"
-
-    # Save uploaded file
+    
+    # Save uploaded file using chunked streaming (better for large files)
     try:
-        content = await file.read()
         with open(upload_path, "wb") as f:
-            f.write(content)
+            shutil.copyfileobj(file.file, f)
     except Exception as e:
         logger.error(f"Error saving uploaded file: {e}")
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
+    finally:
+        file.file.close()
 
     # Configure conversion settings
     epsg_code = input_epsg if input_epsg.upper().startswith("EPSG:") else f"EPSG:{input_epsg}"
     
-    # Run background temp file cleanup
-    cleanup_temp_files(max_age_seconds=3600)
-    
+    # Run background temp file cleanup to avoid blocking the response
+    background_tasks.add_task(cleanup_temp_files, max_age_seconds=3600)
+
+    # Apply conversion_type presets: "standard" disables text/points for cleaner output
+    if conversion_type == "standard":
+        export_text = False
+        export_points = False
+
+    # Convert fill_color from hex (#rrggbb) to KML aabbggrr format
+    fill_color_kml = "ff0000ff"  # default red
+    try:
+        hex_color = fill_color.lstrip("#")
+        if len(hex_color) == 6:
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            a = int(fill_opacity * 255)
+            fill_color_kml = f"{a:02x}{b:02x}{g:02x}{r:02x}"
+    except Exception:
+        pass
+
     cfg = ConverterConfig(
         input_epsg=epsg_code,
         output_epsg=output_epsg,
@@ -143,6 +168,10 @@ async def convert_file(
         default_label_scale=label_scale,
         export_text=export_text,
         export_points=export_points,
+        auto_scale_text=auto_scale_text,
+        fill_polygons=fill_polygons,
+        fill_color=fill_color_kml,
+        fill_opacity=int(fill_opacity * 255),
     )
 
     try:
@@ -168,9 +197,28 @@ async def convert_file(
         exporter.export_geometries(filtered_geoms)
         exporter.export_points(parse_result.points)
         exporter.export_labels(parse_result.labels)
-        exporter.save(output_kml_path)
 
-        # 5. Build GeoJSON payload for Leaflet map preview
+        # Handle KML vs KMZ output format
+        base_stem = Path(filename).stem
+        if output_format.lower() == "kmz":
+            kml_path = TEMP_STORAGE / f"{file_id}_temp.kml"
+            final_filename = f"{base_stem}.kmz"
+            output_path = TEMP_STORAGE / f"{file_id}_{final_filename}"
+            
+            exporter.save(kml_path)
+            save_as_kmz(kml_path, output_path)
+            
+            # Clean up the intermediate KML file immediately
+            try:
+                kml_path.unlink()
+            except Exception:
+                pass
+        else:
+            final_filename = f"{base_stem}.kml"
+            output_path = TEMP_STORAGE / f"{file_id}_{final_filename}"
+            exporter.save(output_path)
+
+        # Export points & text labels to GeoJSON for web preview payload for Leaflet map preview
         geojson_features = []
 
         # Export polygons & lines to GeoJSON
@@ -232,6 +280,16 @@ async def convert_file(
         if cfg.export_text:
             for lbl in parse_result.labels:
                 lon, lat, _ = transformer.transform_point(lbl.position[0], lbl.position[1], lbl.position[2])
+                
+                # Resolve label color for preview
+                effective_aci = lbl.inline_color_aci if lbl.inline_color_aci else lbl.color_aci
+                label_r, label_g, label_b = (0, 255, 0)  # default green
+                if effective_aci and 1 <= effective_aci <= 255:
+                    label_r, label_g, label_b = aci_to_rgb(effective_aci)
+                elif lbl.rgb_color:
+                    label_r, label_g, label_b = lbl.rgb_color
+                label_hex = f"#{label_r:02x}{label_g:02x}{label_b:02x}"
+                
                 geojson_features.append({
                     "type": "Feature",
                     "geometry": {
@@ -241,7 +299,11 @@ async def convert_file(
                     "properties": {
                         "layer": lbl.layer,
                         "type": "text",
-                        "title": lbl.text
+                        "title": lbl.text,
+                        "text_height": lbl.height,
+                        "rotation": lbl.rotation,
+                        "font_family": lbl.font_family,
+                        "label_color": label_hex,
                     }
                 })
 
@@ -255,8 +317,8 @@ async def convert_file(
 
         return JSONResponse({
             "success": True,
-            "filename": kml_filename,
-            "download_url": f"/api/download/{file_id}/{kml_filename}",
+            "filename": final_filename,
+            "download_url": f"/api/download/{file_id}/{final_filename}",
             "stats": {
                 "total_entities": parse_result.total_entities_processed,
                 "polygons": exporter.stats.polygons_exported,
@@ -280,18 +342,24 @@ async def convert_file(
 
 @app.get("/api/download/{file_id}/{filename}")
 async def download_file(file_id: str, filename: str):
-    """Download generated KML file."""
-    matching_files = list(TEMP_STORAGE.glob(f"{file_id}_*.kml"))
+    """Download generated KML or KMZ file."""
+    file_ext = Path(filename).suffix.lower()
+    if file_ext not in [".kml", ".kmz"]:
+        raise HTTPException(status_code=400, detail="Invalid download file type.")
+        
+    matching_files = list(TEMP_STORAGE.glob(f"{file_id}_*{file_ext}"))
     if not matching_files:
         raise HTTPException(status_code=404, detail="Requested file not found or link expired.")
 
-    kml_file = matching_files[0]
-    original_filename = kml_file.name.replace(f"{file_id}_", "")
+    target_file = matching_files[0]
+    original_filename = target_file.name.replace(f"{file_id}_", "")
+
+    media_type = "application/vnd.google-earth.kmz" if file_ext == ".kmz" else "application/vnd.google-earth.kml+xml"
 
     return FileResponse(
-        path=kml_file,
+        path=target_file,
         filename=original_filename,
-        media_type="application/vnd.google-earth.kml+xml"
+        media_type=media_type
     )
 
 

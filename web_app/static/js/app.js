@@ -1,14 +1,18 @@
-/* CAD2KML Converter Web Client JS */
+/* CAD2KML Converter Web Client JS — v2.0 */
 
 let map;
 let geojsonLayerGroup;
 let selectedMarker;
 let uploadedFile = null;
+let lastConversionGeoJSON = null;  // Store for live preview re-render
+let layerVisibility = {};          // Track layer show/hide state
 
 document.addEventListener('DOMContentLoaded', () => {
   initMap();
   setupDropzone();
   setupFormSubmit();
+  setupLivePreviewListeners();
+  setupFillToggle();
 });
 
 // Initialize Leaflet Satellite Map
@@ -198,8 +202,8 @@ function setupDropzone() {
 
 function handleFileSelected(file) {
   const ext = file.name.split('.').pop().toLowerCase();
-  if (ext === 'dwg') {
-    alert('⚠️ Binary .DWG file detected!\n\nThis converter requires open ASCII .DXF format.\n\nPlease convert your file:\n1. Open your drawing in AutoCAD (or any free CAD viewer).\n2. Click File > Save As...\n3. Select "AutoCAD DXF (*.dxf)" from the dropdown.\n4. Upload the resulting .dxf file here!');
+  if (ext !== 'dxf' && ext !== 'dwg') {
+    showError('Invalid File Type', 'Please upload an AutoCAD .DXF or .DWG file.');
     removeSelectedFile();
     return;
   }
@@ -224,7 +228,213 @@ function toggleAccordion() {
   arrow.innerText = content.classList.contains('open') ? '▲' : '▼';
 }
 
+// Fill polygon toggle
+function setupFillToggle() {
+  const fillCheckbox = document.getElementById('fill_polygons');
+  const fillColorRow = document.getElementById('fillColorRow');
+  
+  fillCheckbox.addEventListener('change', () => {
+    fillColorRow.style.display = fillCheckbox.checked ? 'flex' : 'none';
+    // Re-render preview if data available
+    if (lastConversionGeoJSON) {
+      renderGeoJSONPreview(lastConversionGeoJSON);
+    }
+  });
+}
+
+// Error/Success banner helpers
+function showError(title, message) {
+  const errorBanner = document.getElementById('errorBanner');
+  document.getElementById('errorTitle').innerText = title;
+  document.getElementById('errorMessage').innerText = message;
+  errorBanner.classList.add('active');
+  document.getElementById('successBanner').classList.remove('active');
+}
+
+function hideError() {
+  document.getElementById('errorBanner').classList.remove('active');
+}
+
+// ==========================================
+// Live Preview: Re-render on setting change
+// ==========================================
+function setupLivePreviewListeners() {
+  const settingIds = ['label_scale', 'export_text', 'export_points', 'fill_polygons', 'fill_color', 'fill_opacity'];
+  settingIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', () => {
+        if (lastConversionGeoJSON) {
+          renderGeoJSONPreview(lastConversionGeoJSON);
+        }
+      });
+      if (el.type === 'range' || el.type === 'color') {
+        el.addEventListener('input', () => {
+          if (lastConversionGeoJSON) {
+            renderGeoJSONPreview(lastConversionGeoJSON);
+          }
+        });
+      }
+    }
+  });
+}
+
+// ==========================================
+// GeoJSON Preview Rendering
+// ==========================================
+function renderGeoJSONPreview(geojson) {
+  geojsonLayerGroup.clearLayers();
+
+  const showText = document.getElementById('export_text').checked;
+  const showPoints = document.getElementById('export_points').checked;
+  const labelScale = parseFloat(document.getElementById('label_scale').value) || 0.5;
+  const fillPolygons = document.getElementById('fill_polygons').checked;
+  const fillColor = document.getElementById('fill_color').value;
+  const fillOpacity = parseFloat(document.getElementById('fill_opacity').value) / 100;
+
+  // Collect unique layers
+  const layerSet = new Set();
+
+  const filteredFeatures = geojson.features.filter(f => {
+    const type = f.properties.type;
+    if (type === 'text' && !showText) return false;
+    if (type === 'point' && !showPoints) return false;
+    const layerName = f.properties.layer || 'Default';
+    layerSet.add(layerName);
+    if (layerVisibility[layerName] === false) return false;
+    return true;
+  });
+
+  const geojsonLayer = L.geoJSON({ type: 'FeatureCollection', features: filteredFeatures }, {
+    style: (feature) => {
+      const baseStyle = {
+        color: feature.properties.stroke || '#ef4444',
+        weight: feature.properties['stroke-width'] || 2.5,
+        opacity: 0.9,
+      };
+
+      if (feature.geometry.type === 'Polygon') {
+        baseStyle.fillColor = fillPolygons ? fillColor : (feature.properties.fill || '#ef4444');
+        baseStyle.fillOpacity = fillPolygons ? fillOpacity : (feature.properties['fill-opacity'] || 0.1);
+      } else {
+        baseStyle.fillColor = feature.properties.fill || '#ef4444';
+        baseStyle.fillOpacity = feature.properties['fill-opacity'] || 0.2;
+      }
+
+      return baseStyle;
+    },
+    pointToLayer: (feature, latlng) => {
+      if (feature.properties.type === 'text') {
+        const textHeight = feature.properties.text_height || 1;
+        const baseFontSize = 11;
+        const scaledSize = Math.max(8, Math.min(24, Math.round(baseFontSize * labelScale * 2)));
+        const rotation = feature.properties.rotation || 0;
+        const labelColor = feature.properties.label_color || '#00ff00';
+
+        return L.marker(latlng, {
+          icon: L.divIcon({
+            className: 'map-text-label',
+            html: `<span style="color: ${labelColor}; text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.7); padding: 1px 4px; font-size: ${scaledSize}px; font-weight: 600; white-space: nowrap; transform: rotate(${-rotation}deg); display: inline-block;">${feature.properties.title}</span>`,
+            iconSize: [null, null],
+            iconAnchor: [0, scaledSize / 2]
+          })
+        });
+      }
+      return L.circleMarker(latlng, {
+        radius: 6,
+        fillColor: '#10b981',
+        color: '#ffffff',
+        weight: 1.5,
+        opacity: 1,
+        fillOpacity: 0.9
+      });
+    },
+    onEachFeature: (feature, layer) => {
+      if (feature.properties && feature.properties.layer) {
+        layer.bindPopup(`<strong>Layer:</strong> ${feature.properties.layer}<br>${feature.properties.title || ''}`);
+      }
+    }
+  });
+
+  geojsonLayerGroup.addLayer(geojsonLayer);
+
+  // Auto-fit map to drawing extent
+  const bounds = geojsonLayer.getBounds();
+  if (bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }
+
+  // Build layer control panel
+  buildLayerPanel(layerSet);
+}
+
+// ==========================================
+// Layer Toggle Panel
+// ==========================================
+function buildLayerPanel(layerSet) {
+  const panel = document.getElementById('layerPanel');
+  const body = document.getElementById('layerPanelBody');
+  
+  if (layerSet.size === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  
+  // If the panel already has the same number of layers, skip DOM rebuild
+  // to avoid destroying the checkbox that was just clicked (prevents focus loss)
+  if (body.children.length === layerSet.size) {
+    return;
+  }
+  
+  body.innerHTML = '';
+  const sortedLayers = [...layerSet].sort();
+  
+  sortedLayers.forEach(layerName => {
+    if (layerVisibility[layerName] === undefined) {
+      layerVisibility[layerName] = true;
+    }
+    
+    const row = document.createElement('div');
+    row.className = 'layer-row';
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = layerVisibility[layerName] !== false;
+    checkbox.id = `layer_${layerName}`;
+    checkbox.addEventListener('change', () => {
+      layerVisibility[layerName] = checkbox.checked;
+      if (lastConversionGeoJSON) {
+        renderGeoJSONPreview(lastConversionGeoJSON);
+      }
+    });
+    
+    const label = document.createElement('label');
+    label.htmlFor = `layer_${layerName}`;
+    label.innerText = layerName;
+    
+    row.appendChild(checkbox);
+    row.appendChild(label);
+    body.appendChild(row);
+  });
+  
+  panel.style.display = 'block';
+}
+
+function toggleLayerPanel() {
+  const body = document.getElementById('layerPanelBody');
+  const btn = document.querySelector('.layer-panel-toggle');
+  if (body.style.display === 'none') {
+    body.style.display = 'block';
+    btn.innerText = '−';
+  } else {
+    body.style.display = 'none';
+    btn.innerText = '+';
+  }
+}
+
+// ==========================================
 // Form Submit & Conversion API Call
+// ==========================================
 function setupFormSubmit() {
   const form = document.getElementById('convertForm');
   const convertBtn = document.getElementById('convertBtn');
@@ -234,9 +444,10 @@ function setupFormSubmit() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    hideError();
 
     if (!uploadedFile) {
-      alert('Please upload a .DXF or .DWG file first.');
+      showError('No File Selected', 'Please upload a .DXF file first.');
       return;
     }
 
@@ -251,6 +462,8 @@ function setupFormSubmit() {
 
     successBanner.classList.remove('active');
     geojsonLayerGroup.clearLayers();
+    lastConversionGeoJSON = null;
+    layerVisibility = {}; // Reset layer visibility for new file
 
     try {
       const formData = new FormData(form);
@@ -259,6 +472,11 @@ function setupFormSubmit() {
       formData.set('ignore_large_polygons', document.getElementById('ignore_large_polygons').checked ? 'true' : 'false');
       formData.set('export_text', document.getElementById('export_text').checked ? 'true' : 'false');
       formData.set('export_points', document.getElementById('export_points').checked ? 'true' : 'false');
+      formData.set('auto_scale_text', document.getElementById('auto_scale_text').checked ? 'true' : 'false');
+      formData.set('fill_polygons', document.getElementById('fill_polygons').checked ? 'true' : 'false');
+      formData.set('fill_color', document.getElementById('fill_color').value);
+      formData.set('fill_opacity', (parseFloat(document.getElementById('fill_opacity').value) / 100).toFixed(2));
+      formData.set('output_format', document.getElementById('output_format').value);
 
       const res = await fetch('/api/convert', {
         method: 'POST',
@@ -271,51 +489,10 @@ function setupFormSubmit() {
         throw new Error(data.detail || 'Conversion failed');
       }
 
-      // Render GeoJSON preview on Satellite map
+      // Store GeoJSON for live re-rendering
       if (data.geojson && data.geojson.features) {
-        const geojsonLayer = L.geoJSON(data.geojson, {
-          style: (feature) => {
-            return {
-              color: feature.properties.stroke || '#ef4444',
-              weight: feature.properties['stroke-width'] || 2.5,
-              opacity: 0.9,
-              fillColor: feature.properties.fill || '#ef4444',
-              fillOpacity: feature.properties['fill-opacity'] || 0.2
-            };
-          },
-          pointToLayer: (feature, latlng) => {
-            if (feature.properties.type === 'text') {
-              return L.marker(latlng, {
-                icon: L.divIcon({
-                  className: 'map-text-label',
-                  html: `<span style="color: #ffffff; background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;">${feature.properties.title}</span>`,
-                  iconSize: [100, 20]
-                })
-              });
-            }
-            return L.circleMarker(latlng, {
-              radius: 6,
-              fillColor: '#10b981',
-              color: '#ffffff',
-              weight: 1.5,
-              opacity: 1,
-              fillOpacity: 0.9
-            });
-          },
-          onEachFeature: (feature, layer) => {
-            if (feature.properties && feature.properties.layer) {
-              layer.bindPopup(`<strong>Layer:</strong> ${feature.properties.layer}<br>${feature.properties.title || ''}`);
-            }
-          }
-        });
-
-        geojsonLayerGroup.addLayer(geojsonLayer);
-
-        // Auto-fit map to drawing extent
-        const bounds = geojsonLayer.getBounds();
-        if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [40, 40] });
-        }
+        lastConversionGeoJSON = data.geojson;
+        renderGeoJSONPreview(data.geojson);
       }
 
       // Show success banner & download link
@@ -327,7 +504,7 @@ function setupFormSubmit() {
       successBanner.classList.add('active');
 
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      showError('Conversion Failed', err.message);
     } finally {
       convertBtn.disabled = false;
       convertBtn.innerHTML = `

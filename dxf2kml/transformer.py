@@ -1,5 +1,6 @@
 """
 Coordinate reference system transformer using pyproj.
+Preserves Z (elevation) through the transformation pipeline.
 """
 
 from typing import List, Tuple, Union
@@ -33,17 +34,21 @@ class CoordinateTransformer:
     def transform_coords(
         self,
         coords: List[Union[Tuple[float, float], Tuple[float, float, float]]]
-    ) -> List[Tuple[float, float]]:
-        """Transform a list of 2D or 3D coordinates to (lon, lat)."""
+    ) -> List[Tuple[float, float, float]]:
+        """
+        Transform a list of 2D or 3D coordinates to (lon, lat, elev).
+        Preserves Z (elevation) values through the transformation.
+        """
         if not coords:
             return []
 
         xs = [p[0] for p in coords]
         ys = [p[1] for p in coords]
+        zs = [p[2] if len(p) > 2 else 0.0 for p in coords]
 
         lons, lats = self.transformer.transform(xs, ys)
 
         if isinstance(lons, float):
-            return [(lons, lats)]
+            return [(lons, lats, zs[0])]
 
-        return list(zip(lons, lats))
+        return list(zip(lons, lats, zs))
