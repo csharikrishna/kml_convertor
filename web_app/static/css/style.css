@@ -796,3 +796,32 @@ main.container {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Conversion warnings (e.g. unsupported entities, implausible CRS) */
+.warning-banner {
+  display: none;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--gray-700);
+}
+
+.warning-banner.active {
+  display: block;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.warning-banner strong {
+  display: block;
+  color: #b45309;
+  margin-bottom: 0.35rem;
+}
+
+.warning-banner ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  line-height: 1.5;
+}
