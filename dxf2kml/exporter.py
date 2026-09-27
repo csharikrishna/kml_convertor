@@ -23,7 +23,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from shapely.geometry import LineString, Polygon
 from shapely.geometry.polygon import orient
@@ -139,7 +139,7 @@ class KMLExporter:
     @staticmethod
     def _resolved_rgb(aci: Optional[int], rgb: Optional[Tuple[int, int, int]]) -> Optional[Tuple[int, int, int]]:
         if rgb:
-            return tuple(rgb)
+            return (int(rgb[0]), int(rgb[1]), int(rgb[2]))
         if aci is not None and 1 <= aci <= 255:
             return aci_to_rgb(aci)
         return None
@@ -230,13 +230,13 @@ class KMLExporter:
             )
         else:
             coords = self.transformer.transform_coords(list(g.geom.coords))
-            xml = ("<LineString><tessellate>1</tessellate><altitudeMode>clampToGround</altitudeMode>"
-                   f"<coordinates>{_coords_text(coords)}</coordinates></LineString>")
+            line_xml = ("<LineString><tessellate>1</tessellate><altitudeMode>clampToGround</altitudeMode>"
+                        f"<coordinates>{_coords_text(coords)}</coordinates></LineString>")
             data = {"Layer": g.layer, "Type": "LineString", "Source": g.source}
             if self.unit:
                 data["Length"] = self._format_length(g.geom.length)
             data["Vertices"] = str(len(coords))
-            out.write(self._placemark(None, style, data, xml))
+            out.write(self._placemark(None, style, data, line_xml))
             self._preview_add(
                 {"type": "LineString", "coordinates": [[p[0], p[1]] for p in coords]},
                 {"layer": g.layer, "stroke": stroke_css, "stroke-width": 3},
@@ -294,7 +294,9 @@ class KMLExporter:
         for style in self.style_manager.styles:
             out.write(style.to_kml())
             out.write("\n")
-        writers = {"geom": self._write_geometry, "point": self._write_point, "label": self._write_label}
+        writers: Dict[str, Callable[..., None]] = {
+            "geom": self._write_geometry, "point": self._write_point, "label": self._write_label,
+        }
         for layer, features in layers.items():
             out.write(f"<Folder><name>{xml_text(layer)}</name>\n")
             for kind, obj, style in features:

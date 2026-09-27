@@ -29,7 +29,7 @@ import subprocess
 import tempfile
 import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -88,13 +88,13 @@ def _build_command(executable: str, in_dir: str, out_dir: str, filename: str) ->
 
 def _run(command: List[str], timeout: float) -> subprocess.CompletedProcess:
     env = os.environ.copy()
-    kwargs = {}
+    kwargs: Dict[str, Any] = {}
     if platform.system() == "Windows":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
+        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined,unused-ignore]
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined,unused-ignore]
+        startupinfo.wShowWindow = subprocess.SW_HIDE  # type: ignore[attr-defined,unused-ignore]
         kwargs["startupinfo"] = startupinfo
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined,unused-ignore]
     else:
         kwargs["start_new_session"] = True  # own process group -> killable as a unit
         if command[0] != "xvfb-run":
@@ -111,7 +111,7 @@ def _run(command: List[str], timeout: float) -> subprocess.CompletedProcess:
             proc.kill()
         else:
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
+                os.killpg(proc.pid, signal.SIGKILL)  # type: ignore[attr-defined,unused-ignore]
             except ProcessLookupError:
                 pass
         proc.communicate()

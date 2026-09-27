@@ -24,7 +24,7 @@ import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 import ezdxf
 import ezdxf.colors
@@ -329,7 +329,8 @@ class DXFParser:
         else:  # DEFAULT (-3) or invalid
             lw_mm = None
 
-        return layer, out_aci, (tuple(rgb) if rgb is not None else None), lw_mm
+        rgb_out: Optional[RGB] = (int(rgb[0]), int(rgb[1]), int(rgb[2])) if rgb is not None else None
+        return layer, out_aci, rgb_out, lw_mm
 
     # ------------------------------------------------------------------ traversal
     #
@@ -351,7 +352,7 @@ class DXFParser:
         ctx: Optional[_BlockContext],
         result: DXFParseResult,
         matrix: Optional[Matrix44] = None,
-    ) -> Iterator[Tuple[object, Optional[_BlockContext]]]:
+    ) -> Iterator[Tuple[Any, Optional[_BlockContext]]]:
         """Yield (WCS entity, block_context) for every primitive, expanding blocks recursively."""
         for entity in entities:
             dxftype = entity.dxftype()
@@ -373,7 +374,7 @@ class DXFParser:
                 for transformed in self._transformed_copies(entity, matrix, result):
                     yield transformed, ctx
 
-    def _transformed_copies(self, entity, matrix: Matrix44, result: DXFParseResult) -> Iterator[object]:
+    def _transformed_copies(self, entity, matrix: Matrix44, result: DXFParseResult) -> Iterator[Any]:
         """Copy a block entity and transform it into WCS (mirrors ezdxf's explode fallbacks)."""
         try:
             copy = entity.copy()
@@ -386,7 +387,7 @@ class DXFParser:
             return
         yield from self._transform_entity(copy, matrix, result)
 
-    def _transform_entity(self, entity, matrix: Matrix44, result: DXFParseResult) -> Iterator[object]:
+    def _transform_entity(self, entity, matrix: Matrix44, result: DXFParseResult) -> Iterator[Any]:
         dxftype = entity.dxftype()
         try:
             entity.transform(matrix)
@@ -406,7 +407,7 @@ class DXFParser:
 
     def _expand_insert(
         self, insert, ctx: Optional[_BlockContext], result: DXFParseResult, parent: Optional[Matrix44]
-    ) -> Iterator[Tuple[object, Optional[_BlockContext]]]:
+    ) -> Iterator[Tuple[Any, Optional[_BlockContext]]]:
         name = insert.dxf.get("name", "?")
         depth = ctx.depth if ctx else 0
         if depth >= self.config.max_block_depth:
@@ -463,7 +464,7 @@ class DXFParser:
 
     def _expand_virtual(
         self, entity, ctx: Optional[_BlockContext], result: DXFParseResult, matrix: Optional[Matrix44]
-    ) -> Iterator[Tuple[object, Optional[_BlockContext]]]:
+    ) -> Iterator[Tuple[Any, Optional[_BlockContext]]]:
         """Explode DIMENSION/LEADER/MLINE/... (in their own coordinate space), then transform the parts."""
         dxftype = entity.dxftype()
         depth = ctx.depth if ctx else 0

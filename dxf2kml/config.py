@@ -5,7 +5,7 @@ Supports CLI overrides and YAML file parsing.
 
 from pathlib import Path
 from typing import Optional
-import yaml
+import yaml  # type: ignore[import-untyped,unused-ignore]
 from pydantic import BaseModel, Field
 
 

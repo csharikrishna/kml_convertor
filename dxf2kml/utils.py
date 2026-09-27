@@ -28,7 +28,8 @@ def xml_attr(value: object) -> str:
 def aci_to_rgb(aci: int) -> Tuple[int, int, int]:
     """Convert AutoCAD Color Index (ACI 1-255) to (r, g, b); white for BYBLOCK/BYLAYER/invalid."""
     if isinstance(aci, int) and 1 <= aci <= 255:
-        return tuple(ezdxf.colors.aci2rgb(aci))
+        r, g, b = ezdxf.colors.aci2rgb(aci)
+        return (int(r), int(g), int(b))
     return (255, 255, 255)
 
 
