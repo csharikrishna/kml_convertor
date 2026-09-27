@@ -227,6 +227,7 @@ def test_busy_server_returns_503(tmp_path, monkeypatch):
     exhausted = threading.BoundedSemaphore(1)
     exhausted.acquire()
     monkeypatch.setattr(web, "_slots", exhausted)
+    monkeypatch.setattr(web, "QUEUE_WAIT", 0.2)
     response = _post(_dxf_bytes(tmp_path))
     assert response.status_code == 503 and response.headers["retry-after"]
 

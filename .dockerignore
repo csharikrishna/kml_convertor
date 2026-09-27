@@ -1,0 +1,21 @@
+# Keep the build context small and free of local/private artifacts.
+.git
+.gitignore
+.dockerignore
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.venv
+venv
+*.egg-info
+*.docx
+*.dwl
+*.dwl2
+*.bak
+*.log
+claudeprompt.txt
+tmp
+temp
+# dependencies/*.deb is intentionally NOT ignored: a locally downloaded ODA package
+# is used for offline builds (checksum-verified in the Dockerfile).

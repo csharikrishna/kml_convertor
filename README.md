@@ -1,218 +1,190 @@
-# DXF2KML: Production-Grade AutoCAD DXF to Google Earth KML Converter
+# DXF2KML: AutoCAD DXF/DWG to Google Earth KML/KMZ Converter
 
-A high-performance Python package and CLI tool designed to convert AutoCAD DXF survey drawings into Google Earth compatible KML files. `dxf2kml` faithfully reproduces CAD geometry, layer hierarchies, styling (colors and lineweights), block insertions, point symbols, and text labels inside Google Earth while intelligently cleaning up construction frames and sheet layout borders.
-
----
-
-## Key Features
-
-- **Entity Support**: `LINE`, `LWPOLYLINE`, `POLYLINE`, `POINT`, `TEXT`, `MTEXT`, `INSERT` (recursive block expansion), `HATCH`, `ARC`, `CIRCLE`, `ELLIPSE`, and `SPLINE`.
-- **Fault-Tolerant & Robust**: Unknown or malformed entities are safely logged with warnings (`WARNING: Unsupported entity XXXX skipped`) without crashing execution.
-- **Topology Reconstruction**:
-  - Automatically merges contiguous touching line segments into single continuous `LineString` elements using NetworkX graph analysis.
-  - Automatically identifies closed line loops and converts them into KML `Polygon` elements with interior holes.
-- **Construction Frame & Sheet Border Filtering**:
-  - Detects and filters out giant layout boxes, title blocks, and outer sheet borders using bounding box, area ratio, segment length, and z-score outlier analysis.
-- **Coordinate Reference System (CRS) Transformation**:
-  - Configurable source CRS (default `EPSG:32644` UTM Zone 44N) and target CRS (`EPSG:4326` WGS84) powered by `pyproj`.
-- **Text & MText Processing**:
-  - Strips complex AutoCAD MTEXT formatting tags (`\P`, `\f...;`, `\H...;`, `\C...;`) while preserving text rotation, height, layer, placement, and content.
-- **Layer & Style Preservation**:
-  - Organizes output into KML Folders corresponding 1:1 with AutoCAD layers.
-  - Maps AutoCAD Color Index (ACI 1–255) and RGB True Color to KML hex styles (`aabbggrr`).
+Converts AutoCAD DXF (and, with the ODA File Converter, DWG) survey drawings into Google
+Earth KML/KMZ: geometry, layers, colors, lineweights, blocks, hatches, points and text
+labels, projected from a user-selected CRS (e.g. UTM) to WGS84. Available as a CLI and as a
+FastAPI web application with a satellite-map preview.
 
 ---
 
-## Tech Stack & Architecture
+## Conversion pipeline
 
-- **Python**: 3.11+
-- **Parsing**: `ezdxf`
-- **Spatial Analysis**: `shapely`, `networkx`, `numpy`, `scipy`
-- **CRS Transformation**: `pyproj`
-- **KML Generation**: `simplekml`
-- **CLI & Logging**: `typer`, `rich`, `loguru`, `pydantic`, `pyyaml`
+```text
+upload/file ─► DWG? ─► ODA File Converter (subprocess, timeout, headless) ─► DXF
+            ─► ezdxf load (recovery reader fallback for damaged files)
+            ─► parse: recursive block expansion (composed matrices), BYLAYER/BYBLOCK/layer-0
+               inheritance, OCS→WCS, exact arc/bulge tessellation, splines, hatches, text
+            ─► geometry: closed paths → polygons; open paths of the same layer AND style are
+               snapped, polygonized and line-merged (no edge lost or duplicated)
+            ─► frame filter: removes sheet borders that enclose other content
+            ─► CRS transform (pyproj, always_xy, errcheck) + plausibility check
+            ─► streaming KML writer (one folder per layer) ─► optional KMZ
+```
+
+## Supported AutoCAD entities
+
+| DXF entity | KML output | Notes |
+| :--- | :--- | :--- |
+| `LINE` | LineString (merged) or Polygon | Touching segments of the same layer and style are joined; closed loops become polygons |
+| `LWPOLYLINE`, `POLYLINE` (2D/3D) | LineString or Polygon | Bulge arcs tessellated exactly; OCS/extrusion honoured; spline-fit frame vertices skipped |
+| `ARC`, `CIRCLE`, `ELLIPSE` | LineString / Polygon | Points exactly on the curve; sagitta ≤ `flattening_distance` |
+| `SPLINE` | LineString / Polygon | Control points, fit points, weights (rational), closed/periodic splines |
+| `HATCH`, `MPOLYGON` | Filled Polygon(s) with holes | Multiple areas, holes and islands (normal/outer/ignore styles) |
+| `SOLID`, `TRACE`, `3DFACE` | Polygon | |
+| `INSERT` / `MINSERT` | Expanded content | Nested blocks, arrays, mirroring, non-uniform scaling; recursion and depth guards |
+| `ATTRIB` | Label | Visible block attributes (invisible ones skipped) |
+| `DIMENSION`, `LEADER`, `MULTILEADER`, `MLINE` | Lines, arrows, labels | Exploded into their graphical parts |
+| `POINT` | Placemark | |
+| `TEXT`, `MTEXT` | Label placemark | MTEXT formatting removed; `%%d/%%c/%%p`, `\U+XXXX` (e.g. Telugu) and stacked fractions decoded |
+
+Not converted (reported as warnings, never silently dropped): 3D solids/regions/meshes
+(`3DSOLID`, `REGION`, `MESH`, polyface `POLYLINE`), `IMAGE`, `XLINE`/`RAY`, `ACAD_TABLE`,
+invisible entities. Only model space is converted; paper-space layouts are ignored.
+
+Colors: ACI, true color and layer true color are resolved with AutoCAD's BYLAYER/BYBLOCK
+rules and written as KML `aabbggrr`. Lineweights (mm) become KML widths (px, 96 dpi).
+Feature attributes (layer, type, area/length in CRS units, text) are written as KML
+`ExtendedData` — Google Earth shows them in the balloon, GIS tools import them as fields.
+
+## Coordinate reference systems
+
+* The source CRS must be chosen by the user (EPSG code, default `EPSG:32644`, UTM 44N).
+  DXF files rarely contain a CRS and the drawing units header (`$INSUNITS`) is frequently
+  wrong, so **the converter never guesses a CRS**.
+* KML requires WGS84 longitude/latitude; any other output CRS is rejected.
+* If the drawing's coordinates fall outside the selected CRS's area of use (typical for
+  a wrong UTM zone or a local, non-georeferenced drawing) the conversion succeeds but
+  returns a prominent warning. Coordinates that cannot be projected at all fail the
+  conversion instead of producing `inf`.
 
 ---
 
 ## Installation
 
-### Prerequisites
-Python 3.11 or later.
+Python 3.11+.
 
 ```bash
-git clone https://github.com/your-org/dxf2kml.git
-cd kml_convertor
-pip install -e .
+pip install -r requirements.txt          # pinned, tested versions
+# or, as a package:
+pip install -e ".[web]"
 ```
 
-Or install dependencies directly:
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## CLI Usage
-
-### Basic Usage
+## CLI usage
 
 ```bash
-python main.py --input survey.dxf --output survey.kml
+python main.py convert --input survey.dxf --output survey.kml
+python main.py convert -i survey.dxf -o survey.kmz --input-epsg 32643     # KMZ by extension
+python main.py convert -i survey.dxf -c examples/sample_config.yaml -v
 ```
 
-### Full Options Example
-
-```bash
-python main.py \
-    --input survey.dxf \
-    --output survey.kml \
-    --input-epsg 32644 \
-    --output-epsg 4326 \
-    --ignore-large-polygons \
-    --merge-lines \
-    --merge-distance 0.05 \
-    --export-text \
-    --export-points \
-    --config examples/sample_config.yaml
-```
-
-### CLI Command Options
-
-| Parameter | Short | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `--input` | `-i` | Input AutoCAD DXF file path (Required) | N/A |
-| `--output` | `-o` | Output KML file path | `<input_basename>.kml` |
-| `--input-epsg` | | Source CRS EPSG code | `EPSG:32644` |
-| `--output-epsg` | | Target CRS EPSG code | `EPSG:4326` |
-| `--ignore-large-polygons` | | Filter out layout sheet borders | `True` |
-| `--merge-lines` | | Merge touching line segments | `True` |
-| `--merge-distance` | | Distance threshold (in input CRS units) to join vertices | `0.05` |
-| `--export-text` | | Export TEXT / MTEXT as KML Placemarks | `True` |
-| `--export-points` | | Export POINT entities as Placemarks | `True` |
-| `--config` | `-c` | Path to YAML configuration file | Optional |
-| `--verbose` | `-v` | Enable detailed debug logs | `False` |
-
----
-
-## Configuration File (YAML)
-
-You can pass a YAML configuration file to customize parameters across pipeline steps:
-
-```yaml
-input_epsg: "EPSG:32644"
-output_epsg: "EPSG:4326"
-
-merge_lines: true
-merge_distance: 0.05
-ignore_large_polygons: true
-export_text: true
-export_points: true
-export_hatches: true
-
-# Border & Frame filtering thresholds
-max_segment_length: 5000.0
-max_area_ratio: 0.7
-border_z_score_threshold: 3.0
-
-# Styling options
-default_line_width: 2.5
-default_line_color: "ff0000ff"
-default_point_scale: 0.8
-default_label_scale: 1.0
-```
-
----
-
-## Supported AutoCAD Entities
-
-| DXF Entity | KML Representation | Features Preserved |
+| Option | Description | Default |
 | :--- | :--- | :--- |
-| `LINE` | LineString (or Merged Polygon) | Color, lineweight, layer |
-| `LWPOLYLINE` | LineString or Polygon | Topology, vertices, closed loops |
-| `POLYLINE` | LineString or Polygon | 2D/3D polyline vertices |
-| `POINT` | Placemark | Coordinates, color, custom icon |
-| `TEXT` | Placemark (Label) | Cleaned text content, height, layer |
-| `MTEXT` | Placemark (Label) | Formatting tags stripped (`\P`), content |
-| `INSERT` | Expanded nested entities | WCS transformed translation, rotation, scale |
-| `HATCH` | Polygon | Exterior/interior boundary paths |
-| `ARC` | LineString | Tessellated curve vertices |
-| `CIRCLE` | Polygon / LineString | Tessellated 360-degree boundary |
-| `ELLIPSE` | LineString / Polygon | Discretized elliptical geometry |
-| `SPLINE` | LineString | Flattened B-spline control curves |
+| `--input`, `-i` | Input DXF/DWG file (required) | |
+| `--output`, `-o` | Output `.kml` or `.kmz` | `<input>.kml` |
+| `--input-epsg` | Source CRS (`32644` or `EPSG:32644`) | `EPSG:32644` |
+| `--output-epsg` | Must be WGS84 | `EPSG:4326` |
+| `--ignore-large-polygons/--no-ignore-large-polygons` | Remove sheet borders / frames | on |
+| `--merge-lines/--no-merge-lines` | Merge touching segments | on |
+| `--merge-distance` | Endpoint snapping tolerance (CRS units) | `0.05` |
+| `--export-text/--no-export-text` | TEXT/MTEXT/ATTRIB labels | on |
+| `--export-points/--no-export-points` | POINT placemarks | on |
+| `--label-scale` | Base KML label scale | `0.7` |
+| `--config`, `-c` | YAML configuration file | |
+| `--verbose`, `-v` | Debug logging | off |
 
----
+The exit code is 1 for conversion errors (invalid file, CRS, limits). All
+`ConverterConfig` fields can be set in YAML — see `dxf2kml/config.py` and
+`examples/sample_config.yaml` (tolerances, frame-filter thresholds, styling, limits).
 
-## Execution Output Summary Example
-
-When running `dxf2kml`, a clean execution summary is output via `loguru`:
-
-```text
-==================================================
-Loaded 824 entities
-Merged 32 lines
-Ignored 2 construction rectangles
-Exported
-  12 polygons
-  41 polylines
-  52 points
-  13 labels
-Finished in 0.8 seconds
-==================================================
-```
-
-### Web Application & Live Satellite Map
-
-Launch the interactive web UI server locally:
+## Web application
 
 ```bash
-python main.py web --port 8000
+python main.py web --port 8000        # http://localhost:8000, API docs at /docs
 ```
-Then visit `http://localhost:8000/` in your browser.
 
-**Web App Features**:
-- Dual-panel UI with interactive Esri World Imagery Satellite Map.
-- Automatic UTM zone detection based on map clicks or browser geolocation.
-- Live GeoJSON preview of converted CAD vectors overlaid on satellite imagery.
-- Instant validation for `.dwg` files with clear conversion instructions.
-- FastAPI interactive documentation available at `/docs`.
+### API
+
+| Method & path | Purpose |
+| :--- | :--- |
+| `POST /api/convert` | multipart form: `file` (.dxf/.dwg), `input_epsg`, `output_epsg` (`EPSG:4326` only), `conversion_type` (`raw`/`standard`), `output_format` (`kml`/`kmz`), `merge_lines`, `ignore_large_polygons`, `export_text`, `export_points`, `auto_scale_text`, `label_scale` (0.05–5), `fill_polygons`, `fill_color` (`#rrggbb`), `fill_opacity` (0–1). Returns `job_id`, `filename`, `download_url`, `stats` (counts, unsupported/skipped entities), `warnings`, `timings`, `geojson` preview, `preview_truncated`. |
+| `GET /api/download/{job_id}/{filename}` | Download the result (expires after `OUTPUT_TTL_SECONDS`). |
+| `POST /api/utm-zone` | form `lat`, `lon` → UTM EPSG code (incl. Norway/Svalbard exceptions). |
+| `GET /health` | Status, version, DWG support, limits, conversion counters. |
+
+Status codes: `400` invalid input/options/CRS, `413` file or drawing exceeds limits,
+`422` DWG conversion impossible, `503` busy (retry, `Retry-After`), `500` unexpected
+(message contains a reference id; details only in server logs).
+
+Uploaded drawings are deleted as soon as the conversion finishes; outputs are kept for
+download until they expire. Conversions run in a worker thread with bounded concurrency,
+so the server keeps answering (including `/health`) during long conversions.
+
+### Configuration (environment variables)
+
+| Variable | Default | Meaning |
+| :--- | :--- | :--- |
+| `MAX_UPLOAD_MB` | 25 | Maximum upload size |
+| `MAX_ENTITIES` / `MAX_VERTICES` | 500000 / 2000000 | Drawing complexity limits (after block expansion) |
+| `CONVERSION_TIMEOUT_SECONDS` | 120 | Per-conversion time budget |
+| `MAX_CONCURRENT_CONVERSIONS` | 1 | Parallel conversions (others get 503) |
+| `QUEUE_WAIT_SECONDS` | 10 | How long a request waits for a free slot before 503 |
+| `OUTPUT_TTL_SECONDS` | 3600 | How long results can be downloaded |
+| `PREVIEW_MAX_VERTICES` | 150000 | Size cap for the map preview payload |
+| `DXF2KML_TEMP_DIR` | `<tmp>/dxf2kml_web` | Working directory for jobs |
+| `ODA_FILE_CONVERTER` | auto-detect | Path to the ODA File Converter executable |
+| `ODA_TIMEOUT_SECONDS` / `ODA_MAX_CONCURRENCY` | 120 / 1 | DWG conversion subprocess limits |
+| `LOG_LEVEL` / `LOG_JSON` | INFO / 0 | Logging (`LOG_JSON=1` for structured JSON logs) |
+
+**Memory sizing** (measured in a 512 MB Docker container): about 105 MiB baseline plus
+~0.35 MiB per 1,000 vertices — a 5.4 MB DXF (440k vertices) peaks at ~258 MiB, a 13.6 MB DXF
+(1.1M vertices) at ~490 MiB. `render.yaml` therefore uses `MAX_UPLOAD_MB=10` and
+`MAX_VERTICES=800000` for a 512 MB instance; raise both together with the instance size.
 
 ---
 
-## Cloud Deployment
+## Deployment
 
-### 1. Deploying with Docker
-
-Build and run the Docker image:
+**DWG support requires Docker.** The ODA File Converter is a closed-source Qt6 binary that
+needs system X11/GL/font libraries and a virtual display (Xvfb); a native PaaS Python
+runtime cannot install those. The `Dockerfile` downloads the ODA package at build time and
+verifies its SHA-256 (it is not stored in git — see `dependencies/README.md`).
 
 ```bash
-docker build -t dxf2kml-app .
-docker run -p 8000:8000 dxf2kml-app
+docker build -t dxf2kml .                          # with DWG support
+docker build --target test .                       # run the test suite inside the image
+docker run -p 8000:8000 -e MAX_UPLOAD_MB=25 dxf2kml
 ```
 
-### 2. Deploying on Render / Railway / Heroku
-
-The repository includes `render.yaml` and `Procfile` for 1-click cloud deployment:
-
-- **Render**: Connect your GitHub repository and select **New Web Service** (Render will auto-detect `render.yaml`).
-- **Railway / Heroku**: Connect your GitHub repository and set the start command to:
-  ```bash
-  uvicorn web_app.app:app --host 0.0.0.0 --port $PORT
-  ```
+* **Render:** `render.yaml` defines a Docker web service with `/health` checks and limits
+  sized for the free (512 MB) plan. Connect the repository as a Blueprint.
+* **Heroku / Railway (native Python):** the `Procfile` works, but only DXF is supported
+  there; the UI hides the DWG option automatically.
+* The service keeps job files on local disk, so run a single instance (or add shared
+  storage) — downloads must reach the instance that performed the conversion.
 
 ---
 
-## Testing
-
-Run unit tests via `pytest`:
+## Development
 
 ```bash
-pytest -v
+pip install -r requirements-dev.txt
+pytest                      # unit, integration, web and golden tests
+ruff check .
+python benchmarks/bench_pipeline.py --sizes 100 1000 5000
 ```
 
----
+The DWG test using the real ODA converter runs only where the converter is installed
+(e.g. `docker build --target test .`).
 
 ## Limitations
 
-- **3D Solid Meshes**: 3D surfaces (`3DFACE`, `MESH`, `SOLID`) are skipped with a warning.
-- **Custom Fonts**: Text labels rely on standard Google Earth font rendering.
-- **Extrusions/UCS**: Entities are projected assuming WCS coordinates or exploded block transformations.
+* Only model space is converted; 3D solids/meshes, images and tables are reported but
+  not converted. Text rotation is not representable in KML labels.
+* HATCH boundaries made of *edge* arcs are approximated with Bézier curves by ezdxf
+  (radial deviation ≤ 0.027% of the arc radius); polyline boundaries and all ARC/CIRCLE/
+  bulge geometry are exact to the flattening tolerance.
+* Frozen/off layers are exported (layer visibility state is not interpreted).
+* The frame filter drops single segments longer than `max_segment_length` (default
+  5000 CRS units) and polygons that dominate the drawing extent *and enclose other
+  content*; disable it with `--no-ignore-large-polygons` if needed. Every removal is logged
+  and counted in the result.

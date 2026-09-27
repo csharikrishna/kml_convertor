@@ -1,10 +1,35 @@
+# Render Blueprint.
+#
+# DWG support needs the ODA File Converter plus X11/Qt system libraries, which only a
+# Docker deployment can provide, so this service uses runtime: docker. (The previous
+# "env: python" service could never install the committed .deb package.)
+#
+# Limits below are sized for a 512 MB instance. Measured in a 512 MB container:
+# ~105 MiB baseline + ~0.35 MiB per 1,000 vertices (5.4 MB DXF / 440k vertices -> 258 MiB,
+# 13.6 MB DXF / 1.1M vertices -> 490 MiB). 800k vertices / 10 MB keeps ~25% headroom.
+# Raise them together with the instance size.
 services:
   - type: web
     name: cad2kml-converter
-    env: python
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt && pip install -e .
-    startCommand: uvicorn web_app.app:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: MAX_UPLOAD_MB
+        value: "10"
+      - key: MAX_VERTICES
+        value: "800000"
+      - key: MAX_ENTITIES
+        value: "300000"
+      - key: MAX_CONCURRENT_CONVERSIONS
+        value: "1"
+      - key: CONVERSION_TIMEOUT_SECONDS
+        value: "120"
+      - key: ODA_TIMEOUT_SECONDS
+        value: "90"
+      - key: OUTPUT_TTL_SECONDS
+        value: "3600"
+      - key: LOG_JSON
+        value: "1"

@@ -33,3 +33,12 @@ Thumbs.db
 tmp/
 temp/
 dxf2kml_web/
+
+# Third-party binaries: fetched and checksum-verified at Docker build time
+dependencies/*.deb
+*.deb
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
+*.part

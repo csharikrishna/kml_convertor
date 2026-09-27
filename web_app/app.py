@@ -9,7 +9,7 @@ Request flow (POST /api/convert):
 
 Configuration (environment variables, defaults sized for a 512 MB instance):
   MAX_UPLOAD_MB=25  MAX_ENTITIES=500000  MAX_VERTICES=2000000  CONVERSION_TIMEOUT_SECONDS=120
-  MAX_CONCURRENT_CONVERSIONS=1  OUTPUT_TTL_SECONDS=3600  PREVIEW_MAX_VERTICES=150000
+  MAX_CONCURRENT_CONVERSIONS=1  QUEUE_WAIT_SECONDS=10  OUTPUT_TTL_SECONDS=3600  PREVIEW_MAX_VERTICES=150000
   DXF2KML_TEMP_DIR=<system temp>/dxf2kml_web  LOG_LEVEL=INFO  LOG_JSON=0
 """
 
@@ -58,6 +58,7 @@ MAX_ENTITIES = _env_int("MAX_ENTITIES", 500_000)
 MAX_VERTICES = _env_int("MAX_VERTICES", 2_000_000)
 CONVERSION_TIMEOUT = _env_int("CONVERSION_TIMEOUT_SECONDS", 120)
 MAX_CONCURRENT = max(1, _env_int("MAX_CONCURRENT_CONVERSIONS", 1))
+QUEUE_WAIT = _env_int("QUEUE_WAIT_SECONDS", 10)  # how long a request may wait for a free slot
 OUTPUT_TTL = _env_int("OUTPUT_TTL_SECONDS", 3600)
 PREVIEW_MAX_VERTICES = _env_int("PREVIEW_MAX_VERTICES", 150_000)
 
@@ -393,7 +394,7 @@ def convert_file(
     except ValidationError:
         raise HTTPException(status_code=400, detail="Invalid conversion options.") from None
 
-    if not _slots.acquire(timeout=2.0):
+    if not _slots.acquire(timeout=QUEUE_WAIT):
         _count("rejected_busy")
         raise HTTPException(status_code=503, detail="The converter is busy. Please retry in a minute.",
                             headers={"Retry-After": "30"})
