@@ -54,3 +54,8 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP"]
 ignore = ["E501", "B008", "B905", "UP006", "UP007", "UP035", "UP045"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+
