@@ -13,11 +13,9 @@ from loguru import logger
 
 from dxf2kml import __version__
 from dxf2kml.config import ConverterConfig
-from dxf2kml.parser import DXFParser
-from dxf2kml.geometry import GeometryEngine
-from dxf2kml.filters import BoundaryFilter
-from dxf2kml.transformer import CoordinateTransformer
-from dxf2kml.exporter import KMLExporter
+from dxf2kml.errors import ConversionError
+from dxf2kml.pipeline import convert as run_conversion
+from dxf2kml.transformer import normalize_crs_input
 
 app = typer.Typer(
     name="dxf2kml",
@@ -127,7 +125,7 @@ def convert(
         help="Show program version and exit",
     ),
 ):
-    """Convert AutoCAD DXF survey drawing to Google Earth compatible KML."""
+    """Convert an AutoCAD DXF/DWG drawing to Google Earth KML (or KMZ if the output ends in .kmz)."""
     start_time = time.time()
 
     # Configure Loguru logging
@@ -148,11 +146,9 @@ def convert(
 
     # 2. Override config with CLI arguments if specified
     if input_epsg:
-        epsg_code = input_epsg if input_epsg.upper().startswith("EPSG:") else f"EPSG:{input_epsg}"
-        cfg.input_epsg = epsg_code
+        cfg.input_epsg = normalize_crs_input(input_epsg)
     if output_epsg:
-        epsg_code = output_epsg if output_epsg.upper().startswith("EPSG:") else f"EPSG:{output_epsg}"
-        cfg.output_epsg = epsg_code
+        cfg.output_epsg = normalize_crs_input(output_epsg)
     if ignore_large_polygons is not None:
         cfg.ignore_large_polygons = ignore_large_polygons
     if merge_lines is not None:
@@ -178,43 +174,27 @@ def convert(
         title="Processing Run"
     ))
 
-    # 3. Parse DXF file
-    parser = DXFParser(cfg)
-    parse_result = parser.parse(input)
-
-    # 4. Geometry Reconstruction & Topology Analysis
-    geom_engine = GeometryEngine(cfg)
-    reconstructed_geoms, geom_stats = geom_engine.process(
-        parse_result.paths,
-        parse_result.hatches
-    )
-
-    # 5. Filter out construction frames & sheet borders
-    boundary_filter = BoundaryFilter(cfg)
-    filtered_geoms, ignored_frames_count = boundary_filter.filter_geometries(reconstructed_geoms)
-
-    # 6. Transform coordinates & Export to KML
-    transformer = CoordinateTransformer(source_crs=cfg.input_epsg, target_crs=cfg.output_epsg)
-    exporter = KMLExporter(cfg, transformer)
-
-    exporter.export_geometries(filtered_geoms)
-    exporter.export_points(parse_result.points)
-    exporter.export_labels(parse_result.labels)
-
-    exporter.save(output)
+    # 3. Run the conversion pipeline (parse -> geometry -> filter -> CRS -> KML/KMZ)
+    try:
+        result = run_conversion(input, output, cfg)
+    except ConversionError as ex:
+        console.print(f"[bold red]Conversion failed:[/bold red] {ex}")
+        raise typer.Exit(code=1) from None
 
     elapsed_time = time.time() - start_time
 
-    # 7. Output formatted summary
+    # 4. Output formatted summary
     console.print("\n[bold green]==================================================[/bold green]")
-    console.print(f"[bold white]Loaded [cyan]{parse_result.total_entities_processed}[/cyan] entities[/bold white]")
-    console.print(f"[bold white]Merged [cyan]{geom_stats.merged_lines_count}[/cyan] lines[/bold white]")
-    console.print(f"[bold white]Ignored [cyan]{ignored_frames_count}[/cyan] construction rectangles[/bold white]")
+    console.print(f"[bold white]Loaded [cyan]{result.parse_result.total_entities_processed}[/cyan] entities[/bold white]")
+    console.print(f"[bold white]Merged [cyan]{result.geometry_stats.merged_lines_count}[/cyan] line segments[/bold white]")
+    console.print(f"[bold white]Ignored [cyan]{result.ignored_frames}[/cyan] construction rectangles[/bold white]")
     console.print("[bold white]Exported[/bold white]")
-    console.print(f"  [green]{exporter.stats.polygons_exported}[/green] polygons")
-    console.print(f"  [green]{exporter.stats.polylines_exported}[/green] polylines")
-    console.print(f"  [green]{exporter.stats.points_exported}[/green] points")
-    console.print(f"  [green]{exporter.stats.labels_exported}[/green] labels")
+    console.print(f"  [green]{result.export_stats.polygons_exported}[/green] polygons")
+    console.print(f"  [green]{result.export_stats.polylines_exported}[/green] polylines")
+    console.print(f"  [green]{result.export_stats.points_exported}[/green] points")
+    console.print(f"  [green]{result.export_stats.labels_exported}[/green] labels")
+    for warning in result.warnings:
+        console.print(f"[bold yellow]Warning:[/bold yellow] {warning}")
     console.print(f"[bold yellow]Finished in {elapsed_time:.2f} seconds[/bold yellow]")
     console.print("[bold green]==================================================[/bold green]\n")
 

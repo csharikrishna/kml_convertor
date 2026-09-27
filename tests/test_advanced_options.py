@@ -1,7 +1,5 @@
-import pytest
 from fastapi.testclient import TestClient
 from web_app.app import app
-from dxf2kml.config import ConverterConfig
 
 client = TestClient(app)
 
@@ -24,7 +22,7 @@ def test_advanced_options_deselected(tmp_path):
     dxf_path = tmp_path / "test_options.dxf"
     doc = ezdxf.new("R2010")
     msp = doc.modelspace()
-    
+
     # Add polyline, point, and text
     msp.add_lwpolyline([(0, 0), (10, 0), (10, 10)])
     msp.add_point((5, 5))

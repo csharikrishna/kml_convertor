@@ -2,7 +2,7 @@
 Unit tests for construction frame and border filtering.
 """
 
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import Polygon
 from dxf2kml.config import ConverterConfig
 from dxf2kml.geometry import ReconstructedGeometry
 from dxf2kml.filters import BoundaryFilter

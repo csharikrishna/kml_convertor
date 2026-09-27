@@ -3,7 +3,6 @@ Unit tests for Web Application API endpoints.
 """
 
 from pathlib import Path
-import tempfile
 from fastapi.testclient import TestClient
 import ezdxf
 

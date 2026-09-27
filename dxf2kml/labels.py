@@ -2,24 +2,27 @@
 Text and MTEXT processing, cleaning, and positioning.
 
 Handles:
-- AutoCAD MTEXT formatting code extraction (inline colors, heights, fonts)
-- TEXT alignment point logic (halign/valign based)
+- AutoCAD MTEXT formatting code removal (a small tokenizer, not regex stripping,
+  so escaped characters, stacked fractions and paragraph codes survive intact)
+- TEXT control codes (%%d, %%c, %%p, %%nnn) and \\U+XXXX unicode escapes, which
+  pre-R2007 DXF files use for every non-ASCII character (e.g. Telugu, Hindi)
+- TEXT alignment point logic (halign/valign based), in WCS (TEXT points are OCS)
 - MTEXT attachment point offset calculation (1-9 anchor grid)
 - Font family, bold/italic metadata preservation
 """
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from loguru import logger
-import ezdxf.entities
 
 
 @dataclass
 class LabelData:
     """Dataclass holding cleaned label entity metadata."""
     text: str
-    position: Tuple[float, float, float]  # (x, y, z)
+    position: Tuple[float, float, float]  # (x, y, z) in WCS
     rotation: float                       # rotation in degrees
     height: float                         # text height in drawing units
     layer: str
@@ -30,7 +33,7 @@ class LabelData:
     font_family: Optional[str] = None
     bold: bool = False
     italic: bool = False
-    entity_type: str = "TEXT"                # "TEXT" or "MTEXT"
+    entity_type: str = "TEXT"                # "TEXT", "MTEXT" or "ATTRIB"
 
 
 class MTextFormatResult:
@@ -39,51 +42,156 @@ class MTextFormatResult:
         self.clean_text: str = ""
         self.inline_color_aci: Optional[int] = None
         self.inline_height: Optional[float] = None
+        self.inline_height_relative: bool = False
         self.font_family: Optional[str] = None
         self.bold: bool = False
         self.italic: bool = False
 
 
+# ---------------------------------------------------------------------------
+# Low level decoding helpers
+# ---------------------------------------------------------------------------
+
+_DXF_UNICODE = re.compile(r"\\U\+([0-9A-Fa-f]{4})")
+_TEXT_PERCENT_CODE = re.compile(r"%%(\d{3}|[dDcCpPuUoOkK%])")
+_PERCENT_SYMBOLS = {"d": "\u00b0", "c": "\u2300", "p": "\u00b1", "%": "%"}
+# Formatting commands whose argument runs up to the next ';'
+_MTEXT_ARG_COMMANDS = set("ACcFfHQTWp")
+# Formatting toggles without arguments (underline, overline, strike-through)
+_MTEXT_TOGGLES = set("LlOoKk")
+
+
+def decode_dxf_unicode(text: str) -> str:
+    """Decode ``\\U+XXXX`` escapes (including UTF-16 surrogate pairs) to characters."""
+    if "\\U+" not in text and "\\u+" not in text:
+        return text
+
+    def _units(match: "re.Match[str]") -> str:
+        return chr(int(match.group(1), 16))
+
+    decoded = _DXF_UNICODE.sub(_units, text.replace("\\u+", "\\U+"))
+    # Re-combine surrogate pairs produced by characters outside the BMP.
+    try:
+        return decoded.encode("utf-16", "surrogatepass").decode("utf-16")
+    except UnicodeError:
+        return decoded
+
+
+def decode_text_codes(text: str) -> str:
+    """Decode TEXT/ATTRIB control codes: %%d, %%c, %%p, %%%, %%nnn; drop %%u/%%o/%%k toggles."""
+    if not text:
+        return ""
+
+    def _repl(match: "re.Match[str]") -> str:
+        code = match.group(1)
+        if code.isdigit():
+            value = int(code)
+            return chr(value) if 32 <= value < 256 else ""
+        return _PERCENT_SYMBOLS.get(code.lower(), "")
+
+    return decode_dxf_unicode(_TEXT_PERCENT_CODE.sub(_repl, text))
+
+
+def clean_mtext(text: str) -> str:
+    """
+    Convert raw MTEXT content into plain text.
+
+    Handles: \\P and \\N (line breaks), \\~ (non-breaking space), \\\\ \\{ \\} (escapes),
+    \\S<a>^<b>; \\S<a>/<b>; \\S<a>#<b>; (stacked text -> "a/b"), argument commands
+    (\\A \\C \\c \\F \\f \\H \\Q \\T \\W \\p ... up to ';'), toggles (\\L \\l \\O \\o \\K \\k),
+    grouping braces, \\U+XXXX unicode escapes and %%d/%%c/%%p symbols.
+    A literal '~' is preserved (it is only a non-breaking space when escaped).
+    """
+    if not text:
+        return ""
+
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n:
+            code = text[i + 1]
+            if code in ("P", "N", "X"):
+                out.append("\n")
+                i += 2
+            elif code == "~":
+                out.append(" ")
+                i += 2
+            elif code in ("\\", "{", "}"):
+                out.append(code)
+                i += 2
+            elif code in ("U", "u") and text[i + 2:i + 3] == "+":
+                hexdigits = text[i + 3:i + 7]
+                if len(hexdigits) == 4 and all(c in "0123456789abcdefABCDEF" for c in hexdigits):
+                    out.append(chr(int(hexdigits, 16)))
+                    i += 7
+                else:
+                    out.append(code)
+                    i += 2
+            elif code == "S":
+                end = text.find(";", i + 2)
+                if end == -1:
+                    out.append(text[i + 2:])
+                    break
+                stacked = text[i + 2:end]
+                parts = re.split(r"(?<!\\)[\^/#]", stacked, maxsplit=1)
+                parts = [p.replace("\\", "").strip() for p in parts]
+                out.append("/".join(p for p in parts if p))
+                i = end + 1
+            elif code in _MTEXT_ARG_COMMANDS:
+                end = text.find(";", i + 2)
+                i = n if end == -1 else end + 1
+            elif code in _MTEXT_TOGGLES:
+                i += 2
+            else:
+                # Unknown escape: keep the character itself.
+                out.append(code)
+                i += 2
+        elif ch in "{}":
+            i += 1
+        elif ch == "^" and i + 1 < n and text[i + 1] in "IJM":
+            # Caret-encoded control characters: ^I tab, ^J line feed, ^M carriage return
+            out.append("\t" if text[i + 1] == "I" else "\n")
+            i += 2
+        else:
+            out.append(ch)
+            i += 1
+
+    plain = decode_text_codes("".join(out)).replace("\u00a0", " ")
+    lines = [line.strip() for line in plain.replace("\r", "\n").split("\n")]
+    return "\n".join(line for line in lines if line).strip()
+
+
 def extract_mtext_formatting(text: str) -> MTextFormatResult:
     """
     Extract useful formatting metadata from MTEXT codes, then clean the text.
-    
-    Extracts:
-      \\C<n>; -> inline ACI color override
-      \\H<value>; or \\H<value>x; -> inline height override (absolute or relative)
+
+    Extracts (first occurrence only):
+      \\C<n>;                  -> inline ACI color override
+      \\H<value>; / \\H<value>x; -> inline absolute height / relative multiplier
       \\f<FontName>|b<0|1>|i<0|1>|...; -> font family, bold, italic
-    
-    Then strips all remaining formatting codes for a clean text string.
     """
     result = MTextFormatResult()
-    
+
     if not text:
         result.clean_text = ""
         return result
 
-    # 1. Extract inline color: \C<number>;
-    color_match = re.search(r"\\C(\d+);", text, flags=re.IGNORECASE)
+    color_match = re.search(r"\\C(\d+);", text)
     if color_match:
-        try:
-            result.inline_color_aci = int(color_match.group(1))
-        except ValueError:
-            pass
+        aci = int(color_match.group(1))
+        if 1 <= aci <= 255:
+            result.inline_color_aci = aci
 
-    # 2. Extract inline height: \H<number>; or \H<number>x;
-    height_match = re.search(r"\\H([\d.]+)(x)?;", text, flags=re.IGNORECASE)
+    height_match = re.search(r"\\H(\d+(?:\.\d+)?|\.\d+)([xX])?;", text)
     if height_match:
-        try:
-            h_val = float(height_match.group(1))
-            is_relative = height_match.group(2) is not None  # 'x' suffix = relative multiplier
-            if is_relative:
-                result.inline_height = h_val  # Store as multiplier, caller applies
-            else:
-                result.inline_height = h_val  # Absolute height
-        except ValueError:
-            pass
+        h_val = float(height_match.group(1))
+        if h_val > 0:
+            result.inline_height = h_val
+            result.inline_height_relative = height_match.group(2) is not None
 
-    # 3. Extract font specification: \f<FontName>|b<0|1>|i<0|1>|...;
-    font_match = re.search(r"\\f([^|;]+)(?:\|b(\d))?(?:\|i(\d))?[^;]*;", text, flags=re.IGNORECASE)
+    font_match = re.search(r"\\[fF]([^|;]+)(?:\|b(\d))?(?:\|i(\d))?[^;]*;", text)
     if font_match:
         result.font_family = font_match.group(1).strip()
         if font_match.group(2):
@@ -91,88 +199,44 @@ def extract_mtext_formatting(text: str) -> MTextFormatResult:
         if font_match.group(3):
             result.italic = font_match.group(3) == "1"
 
-    # 4. Now clean the text by stripping all formatting codes
     result.clean_text = clean_mtext(text)
-    
     return result
 
 
-def clean_mtext(text: str) -> str:
+# ---------------------------------------------------------------------------
+# Entity parsing
+# ---------------------------------------------------------------------------
+
+def _vec_to_tuple(vec) -> Tuple[float, float, float]:
+    return (float(vec.x), float(vec.y), float(vec.z))
+
+
+def _get_text_position(entity) -> Optional[Tuple[float, float, float]]:
     """
-    Remove AutoCAD MTEXT formatting codes.
-    Examples stripped:
-      \\P -> newline or space
-      \\fFontName|...; -> font specification
-      \\H1.5x; -> height specification
-      \\C1; -> color specification
-      \\A1; -> alignment specification
-      \\W1.0; -> width factor
-      \\Q0; -> obliquing angle
-      \\T0; -> tracking
-      {~, \\~} -> non-breaking space
-      {} -> grouping braces
-    """
-    if not text:
-        return ""
+    Determine the WCS anchor point of a TEXT/ATTRIB entity.
 
-    # Replace \\P or \P (paragraph break) with newline or space
-    text = re.sub(r"\\P", "\n", text, flags=re.IGNORECASE)
-
-    # Remove font/height/color/alignment/width/obliquing/tracking formatting codes \f...; \H...; \C...; etc.
-    text = re.sub(r"\\[fhcawqptFHCAWQPT][^;]*;", "", text)
-
-    # Remove remaining backslash escape commands (like \\L...\l for underline, \\O...\o for overline)
-    text = re.sub(r"\\[LloO]", "", text)
-
-    # Remove braces used for MTEXT grouping
-    text = re.sub(r"[{}]", "", text)
-
-    # Replace non-breaking spaces \~ or ~ with space
-    text = text.replace(r"\~", " ").replace("~", " ")
-
-    # Remove extra spaces or trailing whitespace
-    text = "\n".join(line.strip() for line in text.split("\n") if line.strip())
-
-    return text.strip()
-
-
-def _get_text_position(entity: ezdxf.entities.Text) -> Optional[Tuple[float, float, float]]:
-    """
-    Determine the correct insertion point for a TEXT entity based on its
-    horizontal and vertical alignment settings.
-    
     AutoCAD rule:
-    - For left-aligned text (halign=0, valign=0), use 'insert' point.
-    - For all other alignments (center, right, middle, fit, aligned),
-      use 'align_point'.
+    - Left/baseline aligned text (halign=0, valign=0) is placed at 'insert'.
+    - 'Aligned' (3) and 'Fit' (5) text spans insert -> align_point: use the midpoint.
+    - All other alignments are anchored at 'align_point'.
+
+    TEXT coordinates are stored in the entity's OCS; mirrored blocks produce an
+    extrusion of (0, 0, -1), so they must be converted to WCS.
     """
-    try:
-        halign = entity.dxf.get("halign", 0)
-        valign = entity.dxf.get("valign", 0)
-        
-        if halign == 0 and valign == 0:
-            # Left-aligned, baseline: use insert point
-            if hasattr(entity.dxf, "insert") and entity.dxf.insert is not None:
-                pos = entity.dxf.insert
-                return (float(pos.x), float(pos.y), float(pos.z if hasattr(pos, 'z') else 0.0))
+    dxf = entity.dxf
+    if not dxf.hasattr("insert"):
+        return None
+    halign = dxf.get("halign", 0)
+    valign = dxf.get("valign", 0)
+    insert = dxf.insert
+    ocs_point = insert
+    if (halign != 0 or valign != 0) and dxf.hasattr("align_point"):
+        align = dxf.align_point
+        if halign in (3, 5) and valign == 0:
+            ocs_point = (insert + align) * 0.5
         else:
-            # Any other alignment: use align_point
-            if hasattr(entity.dxf, "align_point") and entity.dxf.align_point is not None:
-                pos = entity.dxf.align_point
-                return (float(pos.x), float(pos.y), float(pos.z if hasattr(pos, 'z') else 0.0))
-            # Fallback to insert if align_point is not available
-            if hasattr(entity.dxf, "insert") and entity.dxf.insert is not None:
-                pos = entity.dxf.insert
-                return (float(pos.x), float(pos.y), float(pos.z if hasattr(pos, 'z') else 0.0))
-        
-        # Final fallback
-        if hasattr(entity.dxf, "insert") and entity.dxf.insert is not None:
-            pos = entity.dxf.insert
-            return (float(pos.x), float(pos.y), float(pos.z if hasattr(pos, 'z') else 0.0))
-        
-        return None
-    except Exception:
-        return None
+            ocs_point = align
+    return _vec_to_tuple(entity.ocs().to_wcs(ocs_point))
 
 
 def _calculate_mtext_center_offset(
@@ -184,49 +248,47 @@ def _calculate_mtext_center_offset(
     """
     Calculate the (dx, dy) offset from the MTEXT insertion point to its visual center,
     based on the attachment_point setting (1-9).
-    
+
     Attachment point grid:
       1=TopLeft      2=TopCenter      3=TopRight
       4=MiddleLeft   5=MiddleCenter   6=MiddleRight
       7=BottomLeft   8=BottomCenter   9=BottomRight
-    
-    The insertion point is the anchor specified by attachment_point.
-    KML labels render from center, so we need to estimate where the center is.
-    
-    Returns (dx, dy) offset to add to insertion point to approximate center.
+
+    KML labels render from their anchor point, so we approximate the visual center.
     """
-    # Estimate total text height based on line count
+    if attachment_point not in range(1, 10):
+        attachment_point = 1
     line_count = max(1, text.count("\n") + 1)
     total_height = char_height * line_count * 1.2  # 1.2x for line spacing
-    
-    # Horizontal offset from anchor to center
-    dx = 0.0
+
     col = (attachment_point - 1) % 3  # 0=Left, 1=Center, 2=Right
-    if col == 0:      # Left anchor
-        dx = width / 2.0 if width > 0 else 0.0
-    elif col == 1:    # Center anchor
-        dx = 0.0
-    elif col == 2:    # Right anchor
-        dx = -(width / 2.0) if width > 0 else 0.0
-    
-    # Vertical offset from anchor to center
-    dy = 0.0
+    dx = 0.0
+    if width > 0:
+        if col == 0:
+            dx = width / 2.0
+        elif col == 2:
+            dx = -(width / 2.0)
+
     row = (attachment_point - 1) // 3  # 0=Top, 1=Middle, 2=Bottom
-    if row == 0:      # Top anchor
+    dy = 0.0
+    if row == 0:
         dy = -(total_height / 2.0)
-    elif row == 1:    # Middle anchor
-        dy = 0.0
-    elif row == 2:    # Bottom anchor
+    elif row == 2:
         dy = total_height / 2.0
-    
+
     return (dx, dy)
 
 
-def parse_text_entity(entity: ezdxf.entities.Text) -> Optional[LabelData]:
-    """Extract metadata from TEXT entity with correct alignment-based positioning."""
+def parse_text_entity(entity) -> Optional[LabelData]:
+    """Extract metadata from a TEXT or ATTRIB entity with alignment-correct WCS positioning."""
     try:
-        raw_text = entity.dxf.text
-        text = raw_text.strip()
+        if entity.dxftype() == "ATTRIB" and getattr(entity, "has_embedded_mtext_entity", False):
+            label = parse_mtext_entity(entity.virtual_mtext_entity())
+            if label is not None:
+                label.entity_type = "ATTRIB"
+            return label
+
+        text = decode_text_codes(entity.dxf.get("text", "") or "").strip()
         if not text:
             return None
 
@@ -234,112 +296,62 @@ def parse_text_entity(entity: ezdxf.entities.Text) -> Optional[LabelData]:
         if position is None:
             return None
 
-        rotation = float(entity.dxf.get("rotation", 0.0))
-        height = float(entity.dxf.get("height", 1.0))
-        layer = str(entity.dxf.get("layer", "0"))
-        color_aci = entity.dxf.get("color", None)
-
-        rgb_color = None
-        if hasattr(entity.dxf, "true_color") and entity.dxf.true_color is not None:
-            tc = entity.dxf.true_color
-            rgb_color = ((tc >> 16) & 0xFF, (tc >> 8) & 0xFF, tc & 0xFF)
-
-        # Extract font style name if available
-        font_family = None
-        try:
-            style_name = entity.dxf.get("style", "Standard")
-            if style_name and style_name != "Standard":
-                font_family = style_name
-        except Exception:
-            pass
-
+        style_name = entity.dxf.get("style", "Standard")
         return LabelData(
             text=text,
             position=position,
-            rotation=rotation,
-            height=height,
-            layer=layer,
-            color_aci=color_aci,
-            rgb_color=rgb_color,
-            font_family=font_family,
-            entity_type="TEXT"
+            rotation=float(entity.dxf.get("rotation", 0.0)),
+            height=float(entity.dxf.get("height", 1.0)),
+            layer=str(entity.dxf.get("layer", "0")),
+            color_aci=entity.dxf.get("color", None),
+            font_family=style_name if style_name and style_name != "Standard" else None,
+            entity_type=entity.dxftype(),
         )
     except Exception as e:
-        logger.warning(f"Error parsing TEXT entity: {e}")
+        logger.warning(f"Error parsing {entity.dxftype()} entity (handle={entity.dxf.get('handle')}): {e}")
         return None
 
 
-def parse_mtext_entity(entity: ezdxf.entities.MText) -> Optional[LabelData]:
+def parse_mtext_entity(entity) -> Optional[LabelData]:
     """Extract metadata from MTEXT entity with attachment point offset and inline formatting."""
     try:
-        raw_text = entity.text if hasattr(entity, "text") else entity.plain_text()
-        
-        # Extract formatting metadata before cleaning
-        fmt = extract_mtext_formatting(raw_text)
+        fmt = extract_mtext_formatting(entity.text)
         text = fmt.clean_text
         if not text:
             return None
 
-        pos = entity.dxf.insert
-        base_x = float(pos.x)
-        base_y = float(pos.y)
-        base_z = float(pos.z if hasattr(pos, 'z') else 0.0)
-
-        rotation = float(entity.dxf.get("rotation", 0.0))
+        pos = entity.dxf.insert  # MTEXT insert is stored in WCS
+        rotation = float(entity.get_rotation())  # honours text_direction as well as rotation
         char_height = float(entity.dxf.get("char_height", 1.0))
-        
-        # Apply inline height override if extracted from formatting codes
+
         if fmt.inline_height is not None:
-            char_height = fmt.inline_height * char_height if fmt.inline_height < 10 else fmt.inline_height
+            char_height = fmt.inline_height * char_height if fmt.inline_height_relative else fmt.inline_height
 
-        layer = str(entity.dxf.get("layer", "0"))
-        color_aci = entity.dxf.get("color", None)
-        
-        # Use inline color override if present and entity color is default
-        inline_color_aci = fmt.inline_color_aci
-
-        rgb_color = None
-        if hasattr(entity.dxf, "true_color") and entity.dxf.true_color is not None:
-            tc = entity.dxf.true_color
-            rgb_color = ((tc >> 16) & 0xFF, (tc >> 8) & 0xFF, tc & 0xFF)
-
-        # Calculate center offset based on MTEXT attachment point
-        attachment_point = entity.dxf.get("attachment_point", 1)
-        mtext_width = entity.dxf.get("width", 0)
-        
         dx, dy = _calculate_mtext_center_offset(
-            attachment_point=attachment_point,
-            width=mtext_width,
+            attachment_point=entity.dxf.get("attachment_point", 1),
+            width=float(entity.dxf.get("width", 0) or 0),
             char_height=char_height,
             text=text
         )
-        
-        # Apply rotation to offset if text is rotated
-        import math
+
         if rotation != 0:
             rad = math.radians(rotation)
-            cos_r = math.cos(rad)
-            sin_r = math.sin(rad)
-            dx_rot = dx * cos_r - dy * sin_r
-            dy_rot = dx * sin_r + dy * cos_r
-            dx, dy = dx_rot, dy_rot
-        
-        position = (base_x + dx, base_y + dy, base_z)
+            cos_r, sin_r = math.cos(rad), math.sin(rad)
+            dx, dy = dx * cos_r - dy * sin_r, dx * sin_r + dy * cos_r
 
         return LabelData(
             text=text,
-            position=position,
+            position=(float(pos.x) + dx, float(pos.y) + dy, float(pos.z)),
             rotation=rotation,
             height=char_height,
-            layer=layer,
-            color_aci=color_aci,
-            rgb_color=rgb_color,
-            inline_color_aci=inline_color_aci,
+            layer=str(entity.dxf.get("layer", "0")),
+            color_aci=entity.dxf.get("color", None),
+            inline_color_aci=fmt.inline_color_aci,
             font_family=fmt.font_family,
             bold=fmt.bold,
             italic=fmt.italic,
             entity_type="MTEXT"
         )
     except Exception as e:
-        logger.warning(f"Error parsing MTEXT entity: {e}")
+        logger.warning(f"Error parsing MTEXT entity (handle={entity.dxf.get('handle')}): {e}")
         return None

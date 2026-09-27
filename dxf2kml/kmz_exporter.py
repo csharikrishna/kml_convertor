@@ -16,15 +16,15 @@ def save_as_kmz(kml_path: Path, kmz_path: Path) -> None:
     """
     if not kml_path.exists():
         raise FileNotFoundError(f"Source KML file not found: {kml_path}")
-        
+
     kmz_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         # ZIP_DEFLATED provides good compression
         with zipfile.ZipFile(kmz_path, 'w', zipfile.ZIP_DEFLATED) as kmz:
             # Add the main KML file to the archive as doc.kml (standard KMZ practice)
             kmz.write(kml_path, arcname='doc.kml')
-            
+
         logger.info(f"Successfully packaged KMZ document: {kmz_path}")
     except Exception as e:
         logger.error(f"Failed to create KMZ file: {e}")
