@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # Production image for the dxf2kml web converter, including DWG support through the
 # ODA File Converter. DWG support is only possible in a container (or a VM): ODA ships
 # a Qt6 GUI binary that needs system X11/GL/font libraries and a virtual display, none
