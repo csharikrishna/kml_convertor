@@ -13,6 +13,8 @@ services:
     name: cad2kml-converter
     runtime: docker
     plan: free
+    branch: main
+    autoDeploy: true
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
