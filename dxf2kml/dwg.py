@@ -62,9 +62,16 @@ def find_oda_converter() -> Optional[str]:
 
     if platform.system() == "Windows":
         candidates: List[str] = []
-        for root in (os.environ.get("ProgramFiles", r"C:\Program Files"),
-                     os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
-            candidates += glob.glob(os.path.join(root, "ODA", "ODAFileConverter*", "ODAFileConverter.exe"))
+        user_home = Path.home()
+        for root in (
+            os.environ.get("ProgramFiles", r"C:\Program Files"),
+            os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+            os.environ.get("LOCALAPPDATA", ""),
+            str(user_home / "Downloads"),
+        ):
+            if root:
+                candidates += glob.glob(os.path.join(root, "ODA*", "ODAFileConverter.exe"))
+                candidates += glob.glob(os.path.join(root, "ODA", "ODAFileConverter*", "ODAFileConverter.exe"))
         if candidates:
             return sorted(candidates)[-1]  # newest version directory sorts last
     else:
