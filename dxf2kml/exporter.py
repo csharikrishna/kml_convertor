@@ -18,6 +18,7 @@ KML semantics:
 """
 
 import io
+import math
 import os
 import time
 import zipfile
@@ -129,12 +130,26 @@ class KMLExporter:
             return f"{area:.2f} sq m" if area < 10000 else f"{area / 10000:.4f} hectares"
         return f"{area:.2f} sq {self.unit}"
 
+    def _effective_reference_height(self) -> float:
+        if not hasattr(self, "_cached_ref_height"):
+            heights = sorted(lbl.height for lbl in self._labels if lbl.height > 0)
+            if heights:
+                self._cached_ref_height = heights[len(heights) // 2]
+            else:
+                self._cached_ref_height = self.config.reference_text_height
+        return self._cached_ref_height
+
     def _calculate_label_scale(self, text_height: float) -> float:
-        """Text at reference_text_height renders at default_label_scale; clamp to 0.2 - 3.0."""
+        """Dynamically scale label relative to drawing's typical text height."""
         if not self.config.auto_scale_text or text_height <= 0:
             return self.config.default_label_scale
-        relative = (text_height / self.config.reference_text_height) * self.config.default_label_scale
-        return round(max(0.2, min(3.0, relative)), 3)
+        ref = self._effective_reference_height()
+        if ref <= 0:
+            return self.config.default_label_scale
+        ratio = text_height / ref
+        mult = math.sqrt(ratio) if ratio > 0 else 1.0
+        relative = self.config.default_label_scale * mult
+        return round(max(0.25, min(2.0, relative)), 3)
 
     @staticmethod
     def _resolved_rgb(aci: Optional[int], rgb: Optional[Tuple[int, int, int]]) -> Optional[Tuple[int, int, int]]:

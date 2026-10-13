@@ -825,3 +825,32 @@ main.container {
   padding-left: 1.1rem;
   line-height: 1.5;
 }
+
+/* CAD Map Text Label Styling */
+.map-text-label {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.cad-label-text {
+  display: inline-block;
+  padding: 1px 4px;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 600;
+  white-space: pre;
+  line-height: 1.15;
+  letter-spacing: 0.25px;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.95),
+     1px -1px 0 rgba(0, 0, 0, 0.95),
+    -1px  1px 0 rgba(0, 0, 0, 0.95),
+     1px  1px 0 rgba(0, 0, 0, 0.95),
+     0 0 3px rgba(0, 0, 0, 0.9);
+  transition: font-size 0.12s ease-out;
+  user-select: none;
+}
+

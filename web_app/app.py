@@ -331,7 +331,7 @@ def convert_file(
     conversion_type: str = Form("raw"),  # "standard" or "raw"
     merge_lines: bool = Form(True),
     ignore_large_polygons: bool = Form(True),
-    label_scale: float = Form(0.5),
+    label_scale: float = Form(0.7),
     export_text: bool = Form(True),
     export_points: bool = Form(True),
     auto_scale_text: bool = Form(True),

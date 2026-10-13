@@ -6,6 +6,7 @@ let selectedMarker;
 let uploadedFile = null;
 let lastConversionGeoJSON = null;  // Store for live preview re-render
 let layerVisibility = {};          // Track layer show/hide state
+let currentMedianTextHeight = 1.0; // Drawing-specific median CAD text height
 
 const CONVERT_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -93,6 +94,11 @@ function initMap() {
   ).addTo(map);
 
   geojsonLayerGroup = L.layerGroup().addTo(map);
+
+  // Dynamic zoom-adaptive label sizing
+  map.on('zoomend', () => {
+    updateTextLabelSizes();
+  });
 
   // Click on map to pick location and update UTM zone
   map.on('click', (e) => {
@@ -299,7 +305,7 @@ function setupFillToggle() {
   fillCheckbox.addEventListener('change', () => {
     fillColorRow.style.display = fillCheckbox.checked ? 'flex' : 'none';
     if (lastConversionGeoJSON) {
-      renderGeoJSONPreview(lastConversionGeoJSON);
+      renderGeoJSONPreview(lastConversionGeoJSON, false);
     }
   });
 }
@@ -355,34 +361,87 @@ function setupLivePreviewListeners() {
   settingIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-      el.addEventListener('change', () => {
-        if (lastConversionGeoJSON) {
-          renderGeoJSONPreview(lastConversionGeoJSON);
-        }
-      });
-      if (el.type === 'range' || el.type === 'color') {
+      if (id === 'label_scale') {
         el.addEventListener('input', () => {
+          updateTextLabelSizes();
+        });
+      } else {
+        el.addEventListener('change', () => {
           if (lastConversionGeoJSON) {
-            renderGeoJSONPreview(lastConversionGeoJSON);
+            renderGeoJSONPreview(lastConversionGeoJSON, false);
           }
         });
+        if (el.type === 'range' || el.type === 'color') {
+          el.addEventListener('input', () => {
+            if (lastConversionGeoJSON) {
+              renderGeoJSONPreview(lastConversionGeoJSON, false);
+            }
+          });
+        }
       }
     }
+  });
+}
+
+// Calculate dynamic zoom-adaptive & CAD-text-height-aware font size
+function calculateLabelFontSize(textHeight, labelScale, zoom) {
+  const currentZoom = (zoom !== undefined && zoom !== null) ? zoom : (map ? map.getZoom() : 15);
+  // Reference zoom level is 15 (typical corridor view)
+  // Scale dynamically with zoom: smaller at overview to prevent collisions, larger when zoomed in
+  const zoomDiff = currentZoom - 15;
+  const zoomFactor = Math.max(0.6, Math.min(1.7, Math.pow(1.10, zoomDiff)));
+
+  // Relative CAD height scaling: relative to drawing's median text height
+  let cadHeightFactor = 1.0;
+  const h = Number(textHeight);
+  if (h > 0 && currentMedianTextHeight > 0) {
+    const ratio = h / currentMedianTextHeight;
+    // Sub-linear scaling (sqrt) preserves visual hierarchy without exploding in size
+    cadHeightFactor = Math.max(0.7, Math.min(1.8, Math.sqrt(ratio)));
+  }
+
+  // Base font size for 1.0 scale: 13px
+  const basePx = 13.0;
+  const calculatedPx = basePx * labelScale * zoomFactor * cadHeightFactor;
+  return Math.max(8, Math.min(28, Math.round(calculatedPx)));
+}
+
+// Update all visible CAD text labels instantly without rebuilding map layers
+function updateTextLabelSizes() {
+  if (!map) return;
+  const labelScale = parseFloat(document.getElementById('label_scale')?.value) || 0.7;
+  const currentZoom = map.getZoom();
+  const labels = document.querySelectorAll('.cad-label-text');
+  labels.forEach(el => {
+    const textHeight = parseFloat(el.getAttribute('data-text-height')) || 0;
+    const newSize = calculateLabelFontSize(textHeight, labelScale, currentZoom);
+    el.style.fontSize = `${newSize}px`;
   });
 }
 
 // ==========================================
 // GeoJSON Preview Rendering
 // ==========================================
-function renderGeoJSONPreview(geojson) {
+function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
   geojsonLayerGroup.clearLayers();
 
   const showText = document.getElementById('export_text').checked;
   const showPoints = document.getElementById('export_points').checked;
-  const labelScale = parseFloat(document.getElementById('label_scale').value) || 0.5;
+  const labelScale = parseFloat(document.getElementById('label_scale').value) || 0.7;
   const fillPolygons = document.getElementById('fill_polygons').checked;
   const fillColor = document.getElementById('fill_color').value;
   const fillOpacity = parseFloat(document.getElementById('fill_opacity').value) / 100;
+
+  // Compute drawing's median CAD text height for relative proportionality
+  const textHeights = (geojson.features || [])
+    .filter(f => f.properties && f.properties.type === 'text' && Number(f.properties.text_height) > 0)
+    .map(f => Number(f.properties.text_height))
+    .sort((a, b) => a - b);
+  if (textHeights.length > 0) {
+    currentMedianTextHeight = textHeights[Math.floor(textHeights.length / 2)];
+  } else {
+    currentMedianTextHeight = 1.0;
+  }
 
   const layerSet = new Set();
 
@@ -395,6 +454,8 @@ function renderGeoJSONPreview(geojson) {
     if (layerVisibility[layerName] === false) return false;
     return true;
   });
+
+  const currentZoom = map ? map.getZoom() : 15;
 
   const geojsonLayer = L.geoJSON({ type: 'FeatureCollection', features: filteredFeatures }, {
     style: (feature) => {
@@ -420,16 +481,17 @@ function renderGeoJSONPreview(geojson) {
     pointToLayer: (feature, latlng) => {
       const props = feature.properties;
       if (props.type === 'text') {
-        const scaledSize = Math.max(8, Math.min(24, Math.round(11 * labelScale * 2)));
+        const textHeight = Number(props.text_height) || 0;
+        const fontSize = calculateLabelFontSize(textHeight, labelScale, currentZoom);
         const rotation = Number(props.rotation) || 0;
         const labelColor = safeColor(props.label_color, '#00ff00');
 
         return L.marker(latlng, {
           icon: L.divIcon({
             className: 'map-text-label',
-            html: `<span style="color: ${labelColor}; text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.7); padding: 1px 4px; font-size: ${scaledSize}px; font-weight: 600; white-space: pre; transform: rotate(${-rotation}deg); display: inline-block;">${escapeHtml(props.title)}</span>`,
+            html: `<span class="cad-label-text" data-text-height="${textHeight}" style="color: ${labelColor}; font-size: ${fontSize}px; transform: rotate(${-rotation}deg);">${escapeHtml(props.title)}</span>`,
             iconSize: [null, null],
-            iconAnchor: [0, scaledSize / 2]
+            iconAnchor: [0, fontSize / 2]
           })
         });
       }
@@ -453,7 +515,7 @@ function renderGeoJSONPreview(geojson) {
   geojsonLayerGroup.addLayer(geojsonLayer);
 
   const bounds = geojsonLayer.getBounds();
-  if (bounds.isValid()) {
+  if (shouldFitBounds && bounds.isValid()) {
     map.fitBounds(bounds, { padding: [40, 40] });
   }
 
@@ -494,7 +556,7 @@ function buildLayerPanel(layerSet) {
     checkbox.addEventListener('change', () => {
       layerVisibility[layerName] = checkbox.checked;
       if (lastConversionGeoJSON) {
-        renderGeoJSONPreview(lastConversionGeoJSON);
+        renderGeoJSONPreview(lastConversionGeoJSON, false);
       }
     });
 
@@ -582,7 +644,7 @@ function setupFormSubmit() {
 
       if (data.geojson && Array.isArray(data.geojson.features)) {
         lastConversionGeoJSON = data.geojson;
-        renderGeoJSONPreview(data.geojson);
+        renderGeoJSONPreview(data.geojson, true);
       }
 
       const warnings = [...(data.warnings || [])];
