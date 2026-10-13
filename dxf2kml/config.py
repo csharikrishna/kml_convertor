@@ -28,6 +28,10 @@ class ConverterConfig(BaseModel):
     # Text / Font Accuracy
     auto_scale_text: bool = Field(default=True, description="Automatically scale KML labels based on DXF text height")
     reference_text_height: float = Field(default=2.5, gt=0, description="Reference DXF text height (in drawing units) for relative KML label scaling")
+    export_vector_text: bool = Field(
+        default=True,
+        description="Export CAD labels as true 3D vector ground geometry rotated at CAD angle (clean & professional in Google Earth)"
+    )
 
     # Tessellation & Geometry parameters
     tessellation_segments: int = Field(default=32, ge=4, le=1024, description="Minimum segments used to approximate a full circle")

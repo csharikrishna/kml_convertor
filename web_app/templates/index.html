@@ -289,10 +289,16 @@
           <div class="success-sub" id="successSummary">
             Successfully projected shapes and markers into Google Earth format.
           </div>
-          <a href="#" id="downloadBtn" class="btn-download">
-            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-            Download KML File
-          </a>
+          <div class="result-action-group" style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+            <a href="#" id="downloadBtn" class="btn-download" style="flex:1;">
+              <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              Download KML
+            </a>
+            <button type="button" id="shareBtn" class="btn-share" title="Share with temporary link">
+              <span>🔗</span>
+              <span>Share Link</span>
+            </button>
+          </div>
         </div>
 
       </div>
@@ -452,6 +458,54 @@
       </div>
     </div>
   </footer>
+
+  <!-- Temporary Share Link Modal -->
+  <div class="modal-backdrop" id="shareModal" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>🔗</span>
+          <span>Share Interactive Map</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="shareModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Generate a secure, temporary link for colleagues or clients to view this interactive map and download the KML directly in their browser.
+        </p>
+
+        <div class="modal-field">
+          <label for="shareExpirySelect">Link Expiration Time:</label>
+          <select id="shareExpirySelect" class="select-box" style="width:100%; margin-top:0.35rem;">
+            <option value="1">1 Hour (Quick Review)</option>
+            <option value="6">6 Hours</option>
+            <option value="24" selected>24 Hours (1 Day)</option>
+            <option value="72">3 Days</option>
+            <option value="168">7 Days (1 Week)</option>
+          </select>
+        </div>
+
+        <button type="button" id="generateShareBtn" class="btn-primary" style="width:100%; margin-top:1rem;">
+          Generate Share Link
+        </button>
+
+        <!-- Share Link Result Box -->
+        <div id="shareResultBox" style="display:none; margin-top:1.25rem;">
+          <label style="font-size:0.8rem; color:#94a3b8; font-weight:600;">Shareable URL:</label>
+          <div class="share-url-container" style="display:flex; gap:0.5rem; margin-top:0.35rem;">
+            <input type="text" id="shareUrlInput" class="text-input" readonly style="flex:1; font-size:0.85rem; font-family:monospace; background:rgba(15,23,42,0.6);">
+            <button type="button" id="copyShareUrlBtn" class="btn-copy-url">
+              <span id="copyBtnText">Copy</span>
+            </button>
+          </div>
+          <div class="share-expiry-notice" id="shareExpiryNotice" style="margin-top:0.5rem; font-size:0.78rem; color:#fde047;"></div>
+          <div style="margin-top:0.75rem; text-align:right;">
+            <a href="#" id="openShareUrlLink" target="_blank" class="share-open-link" style="font-size:0.84rem; color:#60a5fa; text-decoration:none; font-weight:600;">Open Shared View ↗</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

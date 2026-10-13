@@ -269,16 +269,77 @@ class KMLExporter:
             1,
         )
 
+    @staticmethod
+    def _text_to_wcs_loops(lbl: LabelData) -> List[List[Tuple[float, float]]]:
+        """Generate 2D closed polygon loops for character glyphs in AutoCAD WCS coordinates."""
+        if not lbl.text or lbl.height <= 0:
+            return []
+        try:
+            from matplotlib.textpath import TextPath
+            tp = TextPath((0, 0), lbl.text, size=lbl.height)
+            loops = tp.to_polygons()
+            if not loops:
+                return []
+            bbox = tp.get_extents()
+            anchor_x = getattr(lbl, "anchor_x", 0.0) if getattr(lbl, "anchor_x", 0.0) is not None else 0.0
+            anchor_y = getattr(lbl, "anchor_y", 0.5) if getattr(lbl, "anchor_y", 0.5) is not None else 0.5
+            ox = bbox.x0 + anchor_x * bbox.width
+            oy = bbox.y0 + anchor_y * bbox.height
+            rad = math.radians(lbl.rotation or 0.0)
+            cos_r = math.cos(rad)
+            sin_r = math.sin(rad)
+            pos_x, pos_y = lbl.position[0], lbl.position[1]
+
+            result: List[List[Tuple[float, float]]] = []
+            for loop in loops:
+                if len(loop) < 3:
+                    continue
+                dx = loop[:, 0] - ox
+                dy = loop[:, 1] - oy
+                wx = dx * cos_r - dy * sin_r + pos_x
+                wy = dx * sin_r + dy * cos_r + pos_y
+                result.append(list(zip(wx.tolist(), wy.tolist())))
+            return result
+        except Exception as ex:
+            logger.debug(f"Vector text generation skipped for label {lbl.text!r}: {ex}")
+            return []
+
     def _write_label(self, out, lbl: LabelData, style: KMLStyle) -> None:
         lon, lat, elev = self.transformer.transform_point(*lbl.position)
-        xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
         data = {"Layer": lbl.layer, "Type": lbl.entity_type, "Text": lbl.text,
                 "Height": f"{lbl.height:.2f}", "Scale": f"{style.label_scale:.2f}"}
         if lbl.rotation is not None:
             data["Rotation"] = f"{lbl.rotation:.1f}°"
         if lbl.font_family:
             data["Font"] = lbl.font_family
-        out.write(self._placemark(lbl.text, style, data, xml))
+
+        # If vector ground text is enabled, generate 3D ground geometry for Google Earth
+        if self.config.export_vector_text and lbl.height > 0:
+            loops = self._text_to_wcs_loops(lbl)
+            if loops:
+                vector_style = self.style_manager.get_vector_label_style(self._label_color(lbl)[0])
+                poly_xmls = []
+                for loop in loops:
+                    geo_loop = self.transformer.transform_coords(loop)
+                    if len(geo_loop) >= 3:
+                        poly_xmls.append(
+                            f"<Polygon><tessellate>1</tessellate><altitudeMode>clampToGround</altitudeMode>"
+                            f"<outerBoundaryIs><LinearRing><coordinates>{_coords_text(geo_loop)}</coordinates></LinearRing></outerBoundaryIs>"
+                            f"</Polygon>"
+                        )
+                if poly_xmls:
+                    point_xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
+                    geom_xml = f"<MultiGeometry>{''.join(poly_xmls)}{point_xml}</MultiGeometry>"
+                    out.write(self._placemark(lbl.text, vector_style, data, geom_xml))
+                else:
+                    xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
+                    out.write(self._placemark(lbl.text, style, data, xml))
+            else:
+                xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
+                out.write(self._placemark(lbl.text, style, data, xml))
+        else:
+            xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
+            out.write(self._placemark(lbl.text, style, data, xml))
         self._preview_add(
             {"type": "Point", "coordinates": [lon, lat]},
             {

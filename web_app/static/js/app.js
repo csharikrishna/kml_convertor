@@ -5,6 +5,7 @@ let geojsonLayerGroup;
 let selectedMarker;
 let uploadedFile = null;
 let lastConversionGeoJSON = null;  // Store for live preview re-render
+let lastJobId = null;              // Active conversion job ID for sharing
 let layerVisibility = {};          // Track layer show/hide state
 let layerOpacity = {};             // Track per-layer opacity (0.0 to 1.0)
 let layerColors = {};              // Track resolved layer colors for chips
@@ -32,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupLivePreviewListeners();
   setupFillToggle();
   setupControls();
+  initShareModal();
 });
 
 // ==========================================
@@ -1576,6 +1578,7 @@ function setupFormSubmit() {
 
       if (data.geojson && Array.isArray(data.geojson.features)) {
         lastConversionGeoJSON = data.geojson;
+        lastJobId = data.job_id;
         renderGeoJSONPreview(data.geojson, true);
         updateCADStatsRibbon(data.geojson, data.stats);
       }
@@ -1632,3 +1635,88 @@ function setupFormSubmit() {
     }
   });
 }
+
+function initShareModal() {
+  const shareBtn = document.getElementById('shareBtn');
+  const modal = document.getElementById('shareModal');
+  const closeBtn = document.getElementById('shareModalClose');
+  const genBtn = document.getElementById('generateShareBtn');
+  const copyBtn = document.getElementById('copyShareUrlBtn');
+  const urlInput = document.getElementById('shareUrlInput');
+  const resultBox = document.getElementById('shareResultBox');
+  const noticeEl = document.getElementById('shareExpiryNotice');
+  const openLink = document.getElementById('openShareUrlLink');
+
+  if (!modal) return;
+
+  const openModal = () => {
+    if (!lastJobId) {
+      alert('Please convert a CAD drawing first before creating a share link.');
+      return;
+    }
+    modal.style.display = 'flex';
+    resultBox.style.display = 'none';
+  };
+
+  const closeModal = () => {
+    modal.style.display = 'none';
+  };
+
+  shareBtn?.addEventListener('click', openModal);
+  closeBtn?.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  genBtn?.addEventListener('click', async () => {
+    if (!lastJobId) return;
+    const hours = document.getElementById('shareExpirySelect')?.value || '24';
+    genBtn.disabled = true;
+    genBtn.innerText = 'Generating link...';
+
+    try {
+      const formData = new FormData();
+      formData.append('job_id', lastJobId);
+      formData.append('expires_in_hours', hours);
+
+      const res = await fetch('/api/share', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to create share link.');
+      }
+
+      const data = await res.json();
+      urlInput.value = data.share_url;
+      if (openLink) openLink.href = data.share_url;
+      if (noticeEl) {
+        noticeEl.innerText = `⏱️ Active for ${data.expires_in_hours} hours (expires ${new Date(data.expires_at).toLocaleString()})`;
+      }
+      resultBox.style.display = 'block';
+    } catch (err) {
+      alert(err.message || 'Error creating share link.');
+    } finally {
+      genBtn.disabled = false;
+      genBtn.innerText = 'Generate Share Link';
+    }
+  });
+
+  copyBtn?.addEventListener('click', async () => {
+    if (!urlInput.value) return;
+    try {
+      await navigator.clipboard.writeText(urlInput.value);
+      const textSpan = document.getElementById('copyBtnText');
+      if (textSpan) {
+        textSpan.innerText = 'Copied!';
+        setTimeout(() => { textSpan.innerText = 'Copy'; }, 2000);
+      }
+    } catch (e) {
+      urlInput.select();
+      document.execCommand('copy');
+    }
+  });
+}
+

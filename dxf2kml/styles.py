@@ -146,3 +146,16 @@ class StyleManager:
         """Text label: invisible icon, colored label."""
         scale = self.config.default_label_scale if label_scale is None else label_scale
         return self._get(("label", kml_color, scale), icon_scale=0.0, label_color=kml_color, label_scale=scale)
+
+    def get_vector_label_style(self, kml_color: str) -> KMLStyle:
+        """Vector ground text style: filled polygon characters, zero icon and zero screen label."""
+        return self._get(
+            ("vector_label", kml_color),
+            line_color=kml_color,
+            line_width=1.0,
+            poly_color=kml_color,
+            poly_fill=True,
+            poly_outline=True,
+            icon_scale=0.0,
+            label_scale=0.0,
+        )

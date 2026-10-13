@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import shutil
 import sys
 import tempfile
@@ -25,8 +26,9 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 from urllib.parse import quote
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -82,11 +84,50 @@ def _count(key: str, delta: int = 1) -> None:
         _metrics[key] = _metrics.get(key, 0) + delta
 
 
+SHARES_FILE = TEMP_STORAGE / "shares.json"
+_shares_lock = threading.Lock()
+
+
+def _load_shares() -> Dict[str, Dict[str, Any]]:
+    if not SHARES_FILE.is_file():
+        return {}
+    try:
+        with open(SHARES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_shares(shares: Dict[str, Dict[str, Any]]) -> None:
+    try:
+        tmp = SHARES_FILE.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(shares, f, indent=2)
+        tmp.replace(SHARES_FILE)
+    except Exception as ex:
+        logger.warning(f"Failed to save shares file: {ex}")
+
+
 def cleanup_temp_files(max_age_seconds: int = OUTPUT_TTL) -> int:
-    """Remove job directories (and stray files) older than ``max_age_seconds``."""
+    """Remove job directories older than max_age_seconds, keeping active shared jobs."""
     now = time.time()
+    active_job_ids = set()
+    with _shares_lock:
+        shares = _load_shares()
+        valid_shares = {}
+        for sid, sinfo in shares.items():
+            if sinfo.get("expires_at", 0) > now:
+                valid_shares[sid] = sinfo
+                active_job_ids.add(sinfo.get("job_id"))
+        if len(valid_shares) != len(shares):
+            _save_shares(valid_shares)
+
     removed = 0
     for item in TEMP_STORAGE.iterdir():
+        if item.name == "shares.json":
+            continue
+        if item.name in active_job_ids:
+            continue  # preserve directory for active share
         try:
             if now - item.stat().st_mtime <= max_age_seconds:
                 continue
@@ -444,9 +485,27 @@ def convert_file(
         f"output_bytes={output_path.stat().st_size} warnings={len(result.warnings)} "
         f"timings={json.dumps(result.timings)} wall={time.monotonic() - started:.2f}s"
     )
-    background_tasks.add_task(cleanup_temp_files)
-
     stats = result.export_stats
+
+    # Persist preview and metadata for temporary shareable links
+    try:
+        with open(job_dir / "preview.json", "w", encoding="utf-8") as pf:
+            json.dump(result.preview or {}, pf)
+        with open(job_dir / "meta.json", "w", encoding="utf-8") as mf:
+            json.dump({
+                "job_id": job_id,
+                "filename": raw_filename,
+                "output_name": output_name,
+                "stats": {
+                    **summary,
+                    "total_shapes": stats.polygons_exported + stats.polylines_exported,
+                    "total_markers": stats.points_exported + stats.labels_exported,
+                },
+                "created_at": time.time(),
+            }, mf)
+    except Exception as ex:
+        logger.warning(f"Failed to persist preview for job {job_id}: {ex}")
+
     return JSONResponse({
         "success": True,
         "job_id": job_id,
@@ -508,6 +567,138 @@ def get_sample_file():
         filename="Althur_padu_bund.dwg",
         headers={"Content-Disposition": 'attachment; filename="Althur_padu_bund.dwg"'}
     )
+
+
+@app.post("/api/share")
+async def create_share_link(
+    request: Request,
+    job_id: str = Form(...),
+    expires_in_hours: float = Form(24.0),
+):
+    """Generate a temporary shareable link for a converted CAD project."""
+    if not _JOB_ID.fullmatch(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format.")
+    job_dir = TEMP_STORAGE / job_id
+    meta_path = job_dir / "meta.json"
+    if not job_dir.is_dir() or not meta_path.is_file():
+        raise HTTPException(status_code=404, detail="Conversion session expired or not found.")
+
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except Exception:
+        meta = {"filename": "drawing.dwg", "output_name": "drawing.kml"}
+
+    hours = max(0.5, min(720.0, float(expires_in_hours)))  # 30 mins to 30 days
+    now = time.time()
+    expires_at = now + (hours * 3600.0)
+    share_id = secrets.token_urlsafe(12)
+
+    share_info = {
+        "share_id": share_id,
+        "job_id": job_id,
+        "filename": meta.get("filename", "drawing"),
+        "output_name": meta.get("output_name", "drawing.kml"),
+        "stats": meta.get("stats", {}),
+        "created_at": now,
+        "expires_at": expires_at,
+        "expires_in_hours": hours,
+    }
+
+    with _shares_lock:
+        shares = _load_shares()
+        shares[share_id] = share_info
+        _save_shares(shares)
+
+    host = request.headers.get("host", "127.0.0.1:8000")
+    scheme = request.url.scheme
+    share_url = f"{scheme}://{host}/share/{share_id}"
+
+    return JSONResponse({
+        "success": True,
+        "share_id": share_id,
+        "share_url": share_url,
+        "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+        "expires_in_hours": hours,
+        "filename": share_info["filename"],
+    })
+
+
+@app.get("/share/{share_id}", response_class=HTMLResponse)
+async def view_shared_map(request: Request, share_id: str):
+    """Serve the dedicated GIS Workstation map view for shared links."""
+    now = time.time()
+    with _shares_lock:
+        shares = _load_shares()
+        share = shares.get(share_id)
+
+    if not share or share.get("expires_at", 0) <= now:
+        return templates.TemplateResponse(request, "share_expired.html", {"share_id": share_id}, status_code=410)
+
+    job_id = share["job_id"]
+    job_dir = TEMP_STORAGE / job_id
+    preview_file = job_dir / "preview.json"
+    if not job_dir.is_dir() or not preview_file.is_file():
+        return templates.TemplateResponse(request, "share_expired.html", {"share_id": share_id}, status_code=410)
+
+    remaining_seconds = max(0, int(share["expires_at"] - now))
+    hours = remaining_seconds // 3600
+    mins = (remaining_seconds % 3600) // 60
+    expiry_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+
+    return templates.TemplateResponse(request, "share_viewer.html", {
+        "share_id": share_id,
+        "filename": share.get("filename", "CAD Drawing"),
+        "output_name": share.get("output_name", "drawing.kml"),
+        "expiry_str": expiry_str,
+        "expires_at_iso": datetime.fromtimestamp(share["expires_at"], tz=timezone.utc).isoformat(),
+        "stats": share.get("stats", {}),
+    })
+
+
+@app.get("/api/share/{share_id}/geojson")
+async def get_shared_geojson(share_id: str):
+    """Serve the preview GeoJSON for a valid temporary share."""
+    now = time.time()
+    with _shares_lock:
+        shares = _load_shares()
+        share = shares.get(share_id)
+    if not share or share.get("expires_at", 0) <= now:
+        raise HTTPException(status_code=410, detail="This shared link has expired.")
+
+    preview_path = TEMP_STORAGE / share["job_id"] / "preview.json"
+    if not preview_path.is_file():
+        raise HTTPException(status_code=404, detail="Preview data not found.")
+    return FileResponse(path=preview_path, media_type="application/json")
+
+
+@app.get("/api/share/{share_id}/download")
+async def download_shared_file(share_id: str):
+    """Download the converted KML/KMZ from a valid temporary share."""
+    now = time.time()
+    with _shares_lock:
+        shares = _load_shares()
+        share = shares.get(share_id)
+    if not share or share.get("expires_at", 0) <= now:
+        raise HTTPException(status_code=410, detail="This shared link has expired.")
+
+    job_dir = TEMP_STORAGE / share["job_id"]
+    target = None
+    output_name = share.get("output_name")
+    if job_dir.is_dir():
+        for candidate in job_dir.iterdir():
+            if candidate.name == output_name and candidate.suffix in (".kml", ".kmz") and candidate.is_file():
+                target = candidate
+                break
+    if target is None:
+        raise HTTPException(status_code=404, detail="Requested file not found.")
+
+    media_type = "application/vnd.google-earth.kmz" if target.suffix == ".kmz" else "application/vnd.google-earth.kml+xml"
+    safe_ascii = re.sub(r'[^a-zA-Z0-9._-]', '_', target.name)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{quote(target.name)}'
+    }
+    return FileResponse(path=target, media_type=media_type, headers=headers)
 
 
 if __name__ == "__main__":

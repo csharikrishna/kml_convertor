@@ -97,7 +97,8 @@ def test_convert_and_download(tmp_path):
 def test_uploaded_drawing_is_deleted_after_conversion(tmp_path):
     data = _post(_dxf_bytes(tmp_path), output_format="kmz").json()
     job_dir = web.TEMP_STORAGE / data["job_id"]
-    assert [p.name for p in job_dir.iterdir()] == [data["filename"]]
+    assert data["filename"] in [p.name for p in job_dir.iterdir()]
+    assert not any(p.name.startswith("input") for p in job_dir.iterdir())
     assert data["filename"].endswith(".kmz")
 
 
