@@ -244,6 +244,15 @@ function initMap() {
   // Dynamic zoom-adaptive label sizing and decluttering
   map.on('zoomend', () => {
     updateTextLabelSizes();
+    const zoomEl = document.getElementById('statusZoom');
+    if (zoomEl) {
+      const zoom = map.getZoom();
+      let lod = 'Detailed (100m)';
+      if (zoom < 13) lod = 'Overview (Landmarks)';
+      else if (zoom <= 14) lod = 'Milestones (1km/500m)';
+      else if (zoom === 15) lod = 'Intervals (200m)';
+      zoomEl.innerText = `${zoom} · ${lod}`;
+    }
   });
 
   // Location selector picker mode on map click
@@ -571,7 +580,12 @@ function initLiveStatusBar() {
       }
 
       if (zoomEl) {
-        zoomEl.innerText = map.getZoom();
+        const zoom = map.getZoom();
+        let lod = 'Detailed (100m)';
+        if (zoom < 13) lod = 'Overview (Landmarks)';
+        else if (zoom <= 14) lod = 'Milestones (1km/500m)';
+        else if (zoom === 15) lod = 'Intervals (200m)';
+        zoomEl.innerText = `${zoom} · ${lod}`;
       }
 
       if (crsEl) {
@@ -894,26 +908,46 @@ function setupLivePreviewListeners() {
   });
 }
 
+function getLabelTier(text, textHeight, medianHeight) {
+  const str = (text || '').trim();
+  const h = Number(textHeight) || 0;
+  const med = Number(medianHeight) || 10.0;
+
+  // Tier 1: Major drawing titles, large text annotations (h >= 1.35 * median), or non-chainage words
+  if (h >= med * 1.35 || (!/^KM\b/i.test(str) && !/^\d+(\.\d+)?$/.test(str) && str.length > 8)) {
+    return 1;
+  }
+  // Tier 2: Whole Kilometer Milestones (e.g., KM 1.000, KM 2.000, KM 1, KM 2)
+  if (/^KM\s*\d+(\.000?)?$/i.test(str) || /\.000$/i.test(str)) {
+    return 2;
+  }
+  // Tier 3: 500m Intervals (e.g., KM 0.500, KM 1.500, KM 2.500)
+  if (/^KM\s*\d+\.[50]00?$/i.test(str) || /\.[50]00$/i.test(str)) {
+    return 3;
+  }
+  // Tier 4: 200m Intervals (e.g., .200, .400, .600, .800)
+  if (/^KM\s*\d+\.[2468]00?$/i.test(str) || /\.[2468]00$/i.test(str)) {
+    return 4;
+  }
+  // Tier 5: Detailed 100m chainage and all minor stations
+  return 5;
+}
+
 function calculateLabelFontSize(textHeight, labelScale, zoom) {
   const currentZoom = (zoom !== undefined && zoom !== null) ? zoom : (map ? map.getZoom() : 15);
   const zoomDiff = currentZoom - 15;
-  let zoomFactor;
-  if (zoomDiff >= 0) {
-    zoomFactor = Math.pow(1.25, zoomDiff);
-  } else {
-    zoomFactor = Math.pow(1.15, zoomDiff);
-  }
+  const zoomFactor = zoomDiff >= 0 ? Math.pow(1.22, zoomDiff) : Math.pow(1.14, zoomDiff);
 
   let cadHeightFactor = 1.0;
   const h = Number(textHeight);
   if (h > 0 && currentMedianTextHeight > 0) {
     const ratio = h / currentMedianTextHeight;
-    cadHeightFactor = Math.max(0.6, Math.min(2.0, Math.sqrt(ratio)));
+    cadHeightFactor = Math.max(0.65, Math.min(2.0, Math.sqrt(ratio)));
   }
 
-  const basePx = 14.0;
-  const calculatedPx = basePx * labelScale * zoomFactor * cadHeightFactor;
-  return Math.max(8, Math.min(42, Math.round(calculatedPx)));
+  const basePx = 13.5;
+  const calculatedPx = basePx * (labelScale || 0.7) * zoomFactor * cadHeightFactor;
+  return Math.max(8, Math.min(38, Math.round(calculatedPx)));
 }
 
 function updateTextLabelSizes() {
@@ -965,24 +999,41 @@ function declutterTextLabels() {
     return;
   }
 
+  const zoom = map.getZoom();
+
   labels.sort((a, b) => {
+    const tierA = parseInt(a.getAttribute('data-tier') || '5', 10);
+    const tierB = parseInt(b.getAttribute('data-tier') || '5', 10);
+    if (tierA !== tierB) return tierA - tierB;
     const ha = parseFloat(a.getAttribute('data-text-height')) || 0;
     const hb = parseFloat(b.getAttribute('data-text-height')) || 0;
     if (Math.abs(ha - hb) > 0.1) return hb - ha;
-
-    const ta = a.textContent || '';
-    const tb = b.textContent || '';
-    const isMilestoneA = /\.000/.test(ta) || /KM\s*\d+(\.0+)?$/i.test(ta);
-    const isMilestoneB = /\.000/.test(tb) || /KM\s*\d+(\.0+)?$/i.test(tb);
-    if (isMilestoneA && !isMilestoneB) return -1;
-    if (!isMilestoneA && isMilestoneB) return 1;
-
-    return ta.localeCompare(tb);
+    return (a.textContent || '').localeCompare(b.textContent || '');
   });
 
   const occupied = [];
 
   labels.forEach(el => {
+    const tier = parseInt(el.getAttribute('data-tier') || '5', 10);
+
+    // Responsive Zoom LOD Visibility Thresholds:
+    // zoom < 13: Tier 1 only (Major Titles / Large Landmarks)
+    // zoom === 13: Tier 1 + Tier 2 (1km Milestones)
+    // zoom === 14: Tier 1 + Tier 2 + Tier 3 (500m Intervals)
+    // zoom === 15: Tier 1 + Tier 2 + Tier 3 + Tier 4 (200m Intervals)
+    // zoom >= 16: All tiers (100m Detailed Stations)
+    let allowedByZoom = true;
+    if (zoom < 13 && tier > 1) allowedByZoom = false;
+    else if (zoom === 13 && tier > 2) allowedByZoom = false;
+    else if (zoom === 14 && tier > 3) allowedByZoom = false;
+    else if (zoom === 15 && tier > 4) allowedByZoom = false;
+
+    if (!allowedByZoom) {
+      el.style.opacity = '0';
+      el.style.pointerEvents = 'none';
+      return;
+    }
+
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
       el.style.opacity = '0';
@@ -990,15 +1041,19 @@ function declutterTextLabels() {
       return;
     }
 
+    const padX = 6;
+    const padY = 3;
+    const box = {
+      left: rect.left - padX,
+      right: rect.right + padX,
+      top: rect.top - padY,
+      bottom: rect.bottom + padY
+    };
+
     let collides = false;
     for (let i = 0; i < occupied.length; i++) {
       const o = occupied[i];
-      const overlapX = Math.max(0, Math.min(rect.right, o.right) - Math.max(rect.left, o.left));
-      const overlapY = Math.max(0, Math.min(rect.bottom, o.bottom) - Math.max(rect.top, o.top));
-      const overlapArea = overlapX * overlapY;
-      const minArea = Math.min(rect.width * rect.height, o.width * o.height);
-
-      if (overlapArea > 0 && (overlapArea / minArea) > 0.20) {
+      if (box.left < o.right && box.right > o.left && box.top < o.bottom && box.bottom > o.top) {
         collides = true;
         break;
       }
@@ -1010,14 +1065,7 @@ function declutterTextLabels() {
     } else {
       el.style.opacity = '1';
       el.style.pointerEvents = 'auto';
-      occupied.push({
-        left: rect.left,
-        right: rect.right,
-        top: rect.top,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height
-      });
+      occupied.push(box);
     }
   });
 }
@@ -1111,6 +1159,7 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
 
       if (props.type === 'text') {
         const textHeight = Number(props.text_height) || 0;
+        const tier = getLabelTier(props.title, textHeight, currentMedianTextHeight);
         const fontSize = calculateLabelFontSize(textHeight, labelScale, currentZoom);
         const rotation = Number(props.rotation) || 0;
         const labelColor = safeColor(props.label_color, '#ff0000');
@@ -1136,13 +1185,14 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
         return L.marker(latlng, {
           icon: L.divIcon({
             className: 'map-text-label',
-            html: `<span class="cad-label-text" data-text-height="${textHeight}" data-anchor-x="${anchorX}" data-anchor-y="${anchorY}" data-rotation="${rotation}" style="color: ${labelColor}; font-size: ${fontSize}px; font-weight: ${fontWeight}; font-style: ${fontStyle}; font-family: ${fontFamily}; opacity: ${userAlpha}; ${transformStyle}">${escapeHtml(props.title)}</span>`,
+            html: `<span class="cad-label-text" data-text-height="${textHeight}" data-tier="${tier}" data-anchor-x="${anchorX}" data-anchor-y="${anchorY}" data-rotation="${rotation}" style="color: ${labelColor}; font-size: ${fontSize}px; font-weight: ${fontWeight}; font-style: ${fontStyle}; font-family: ${fontFamily}; opacity: ${userAlpha}; ${transformStyle}">${escapeHtml(props.title)}</span>`,
             iconSize: [0, 0],
             iconAnchor: [0, 0]
           })
         });
       }
-      return L.circleMarker(latlng, {
+
+      const stationMarker = L.circleMarker(latlng, {
         radius: 4.5,
         className: 'survey-station-marker',
         fillColor: safeColor(props.color, '#10b981'),
@@ -1151,6 +1201,16 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
         opacity: userAlpha,
         fillOpacity: 1.0 * userAlpha
       });
+
+      if (props.title || props.layer) {
+        stationMarker.bindTooltip(escapeHtml(props.title || `Station (${props.layer})`), {
+          className: 'cad-station-tooltip',
+          direction: 'top',
+          offset: [0, -6],
+          opacity: 0.95
+        });
+      }
+      return stationMarker;
     },
     onEachFeature: (feature, layer) => {
       const props = feature.properties;

@@ -275,9 +275,62 @@
       }
     }
 
+    let currentMedianTextHeight = 10.0;
+
+    function getLabelTier(text, textHeight, medianHeight) {
+      const str = (text || '').trim();
+      const h = Number(textHeight) || 0;
+      const med = Number(medianHeight) || 10.0;
+
+      // Tier 1: Major drawing titles, large text annotations (h >= 1.35 * median), or non-chainage words
+      if (h >= med * 1.35 || (!/^KM\b/i.test(str) && !/^\d+(\.\d+)?$/.test(str) && str.length > 8)) {
+        return 1;
+      }
+      // Tier 2: Whole Kilometer Milestones (e.g., KM 1.000, KM 2.000, KM 1, KM 2)
+      if (/^KM\s*\d+(\.000?)?$/i.test(str) || /\.000$/i.test(str)) {
+        return 2;
+      }
+      // Tier 3: 500m Intervals (e.g., KM 0.500, KM 1.500, KM 2.500)
+      if (/^KM\s*\d+\.[50]00?$/i.test(str) || /\.[50]00$/i.test(str)) {
+        return 3;
+      }
+      // Tier 4: 200m Intervals (e.g., .200, .400, .600, .800)
+      if (/^KM\s*\d+\.[2468]00?$/i.test(str) || /\.[2468]00$/i.test(str)) {
+        return 4;
+      }
+      // Tier 5: Detailed 100m chainage and all minor stations
+      return 5;
+    }
+
+    function calculateLabelFontSize(textHeight, labelScale, zoom, medianHeight) {
+      const currentZoom = (zoom !== undefined && zoom !== null) ? zoom : (map ? map.getZoom() : 15);
+      const zoomDiff = currentZoom - 15;
+      const zoomFactor = zoomDiff >= 0 ? Math.pow(1.22, zoomDiff) : Math.pow(1.14, zoomDiff);
+
+      let cadHeightFactor = 1.0;
+      const h = Number(textHeight);
+      const med = Number(medianHeight) || 10.0;
+      if (h > 0 && med > 0) {
+        const ratio = h / med;
+        cadHeightFactor = Math.max(0.65, Math.min(2.0, Math.sqrt(ratio)));
+      }
+
+      const basePx = 13.5;
+      const calculatedPx = basePx * (labelScale || 0.7) * zoomFactor * cadHeightFactor;
+      return Math.max(8, Math.min(38, Math.round(calculatedPx)));
+    }
+
     function renderMapFeatures(geojson, shouldFit = false) {
       if (!geojson || !geojson.features) return;
       geojsonLayerGroup.clearLayers();
+
+      const textHeights = (geojson.features || [])
+        .filter(f => f.properties && f.properties.type === 'text' && Number(f.properties.text_height) > 0)
+        .map(f => Number(f.properties.text_height))
+        .sort((a, b) => a - b);
+      if (textHeights.length > 0) {
+        currentMedianTextHeight = textHeights[Math.floor(textHeights.length / 2)];
+      }
 
       const filtered = geojson.features.filter(f => {
         const lyr = f.properties.layer || 'Default';
@@ -311,11 +364,12 @@
           if (props.type === 'text') {
             const textHeight = Number(props.text_height) || 0;
             const rotation = Number(props.rotation) || 0;
-            const anchorX = Number(props.anchor_x) || 0.0;
-            const anchorY = Number(props.anchor_y) || 0.5;
+            const anchorX = (props.anchor_x !== undefined && props.anchor_x !== null) ? Number(props.anchor_x) : 0.0;
+            const anchorY = (props.anchor_y !== undefined && props.anchor_y !== null) ? Number(props.anchor_y) : 0.5;
             const pctX = Math.round(anchorX * 100);
             const pctY = Math.round(anchorY * 100);
-            const fontSize = Math.max(9, Math.min(28, Math.round(11 * (textHeight / 5.0) * Math.pow(1.15, currentZoom - 14))));
+            const tier = getLabelTier(props.title, textHeight, currentMedianTextHeight);
+            const fontSize = calculateLabelFontSize(textHeight, 0.7, currentZoom, currentMedianTextHeight);
 
             let cssAngle = (-rotation) % 360;
             if (cssAngle < 0) cssAngle += 360;
@@ -324,14 +378,14 @@
             return L.marker(latlng, {
               icon: L.divIcon({
                 className: 'map-text-label',
-                html: `<span class="cad-label-text" data-text-height="${textHeight}" data-anchor-x="${anchorX}" data-anchor-y="${anchorY}" data-rotation="${rotation}" style="color: ${props.label_color || '#ff0000'}; font-size: ${fontSize}px; opacity: ${alpha}; ${transformStyle}">${escapeHtml(props.title || '')}</span>`,
+                html: `<span class="cad-label-text" data-text-height="${textHeight}" data-tier="${tier}" data-anchor-x="${anchorX}" data-anchor-y="${anchorY}" data-rotation="${rotation}" style="color: ${props.label_color || '#ff0000'}; font-size: ${fontSize}px; opacity: ${alpha}; ${transformStyle}">${escapeHtml(props.title || '')}</span>`,
                 iconSize: [0, 0],
                 iconAnchor: [0, 0]
               })
             });
           }
 
-          return L.circleMarker(latlng, {
+          const stationMarker = L.circleMarker(latlng, {
             radius: 4.5,
             className: 'survey-station-marker',
             fillColor: props.color || '#10b981',
@@ -340,6 +394,16 @@
             opacity: alpha,
             fillOpacity: 1.0 * alpha
           });
+
+          if (props.title || props.layer) {
+            stationMarker.bindTooltip(escapeHtml(props.title || `Station (${props.layer})`), {
+              className: 'cad-station-tooltip',
+              direction: 'top',
+              offset: [0, -6],
+              opacity: 0.95
+            });
+          }
+          return stationMarker;
         },
         onEachFeature: (feature, lyr) => {
           lyr.on('click', (e) => {
@@ -355,14 +419,95 @@
       if (shouldFit && geojsonLayerGroup.getLayers().length > 0) {
         map.fitBounds(geojsonLayerGroup.getBounds(), { padding: [40, 40], maxZoom: 18 });
       }
+      updateLabelSizes();
     }
 
     function updateLabelSizes() {
+      if (!map) return;
       const zoom = map.getZoom();
-      document.querySelectorAll('.cad-label-text').forEach(el => {
-        const h = parseFloat(el.getAttribute('data-text-height')) || 5.0;
-        const size = Math.max(9, Math.min(28, Math.round(11 * (h / 5.0) * Math.pow(1.15, zoom - 14))));
+      const labels = Array.from(document.querySelectorAll('.cad-label-text'));
+      if (labels.length === 0) return;
+
+      labels.forEach(el => {
+        const h = parseFloat(el.getAttribute('data-text-height')) || 0;
+        const size = calculateLabelFontSize(h, 0.7, zoom, currentMedianTextHeight);
         el.style.fontSize = `${size}px`;
+      });
+
+      declutterLabelsByZoomAndCollision(labels, zoom);
+    }
+
+    function declutterLabelsByZoomAndCollision(labels, zoom) {
+      // Sort labels by priority:
+      // Lower tier = higher importance (Tier 1 is top priority)
+      // Within same tier, larger text_height first, then alphabetical
+      labels.sort((a, b) => {
+        const tierA = parseInt(a.getAttribute('data-tier') || '5', 10);
+        const tierB = parseInt(b.getAttribute('data-tier') || '5', 10);
+        if (tierA !== tierB) return tierA - tierB;
+        const ha = parseFloat(a.getAttribute('data-text-height')) || 0;
+        const hb = parseFloat(b.getAttribute('data-text-height')) || 0;
+        if (Math.abs(ha - hb) > 0.1) return hb - ha;
+        return (a.textContent || '').localeCompare(b.textContent || '');
+      });
+
+      const occupied = [];
+
+      labels.forEach(el => {
+        const tier = parseInt(el.getAttribute('data-tier') || '5', 10);
+
+        // Responsive Zoom LOD Visibility Thresholds:
+        // zoom < 13: Tier 1 only (Major Titles / Large Landmarks)
+        // zoom === 13: Tier 1 + Tier 2 (1km Milestones)
+        // zoom === 14: Tier 1 + Tier 2 + Tier 3 (500m Intervals)
+        // zoom === 15: Tier 1 + Tier 2 + Tier 3 + Tier 4 (200m Intervals)
+        // zoom >= 16: All tiers (100m Detailed Stations)
+        let allowedByZoom = true;
+        if (zoom < 13 && tier > 1) allowedByZoom = false;
+        else if (zoom === 13 && tier > 2) allowedByZoom = false;
+        else if (zoom === 14 && tier > 3) allowedByZoom = false;
+        else if (zoom === 15 && tier > 4) allowedByZoom = false;
+
+        if (!allowedByZoom) {
+          el.style.opacity = '0';
+          el.style.pointerEvents = 'none';
+          return;
+        }
+
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+          el.style.opacity = '0';
+          el.style.pointerEvents = 'none';
+          return;
+        }
+
+        // Bounding safety padding to avoid visual collision
+        const padX = 6;
+        const padY = 3;
+        const box = {
+          left: rect.left - padX,
+          right: rect.right + padX,
+          top: rect.top - padY,
+          bottom: rect.bottom + padY
+        };
+
+        let collides = false;
+        for (let i = 0; i < occupied.length; i++) {
+          const o = occupied[i];
+          if (box.left < o.right && box.right > o.left && box.top < o.bottom && box.bottom > o.top) {
+            collides = true;
+            break;
+          }
+        }
+
+        if (collides) {
+          el.style.opacity = '0';
+          el.style.pointerEvents = 'none';
+        } else {
+          el.style.opacity = '1';
+          el.style.pointerEvents = 'auto';
+          occupied.push(box);
+        }
       });
     }
 
@@ -531,7 +676,14 @@
 
     function updateStatusBarZoom() {
       const z = document.getElementById('statusZoom');
-      if (z && map) z.innerText = map.getZoom();
+      if (z && map) {
+        const zoom = map.getZoom();
+        let lod = 'Detailed (100m)';
+        if (zoom < 13) lod = 'Overview (Landmarks)';
+        else if (zoom <= 14) lod = 'Milestones (1km/500m)';
+        else if (zoom === 15) lod = 'Intervals (200m)';
+        z.innerText = `${zoom} · ${lod}`;
+      }
     }
 
     function escapeHtml(str) {

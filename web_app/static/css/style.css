@@ -1214,20 +1214,41 @@ main.container {
 
 .cad-label-text {
   display: inline-block;
-  padding: 1px 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-weight: 700;
   white-space: pre;
   line-height: 1.15;
   letter-spacing: 0.25px;
+  background: rgba(15, 23, 42, 0.40);
+  backdrop-filter: blur(2px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   text-shadow:
     -1px -1px 0 rgba(0, 0, 0, 0.95),
      1px -1px 0 rgba(0, 0, 0, 0.95),
     -1px  1px 0 rgba(0, 0, 0, 0.95),
      1px  1px 0 rgba(0, 0, 0, 0.95),
-     0 0 4px rgba(0, 0, 0, 0.95);
-  transition: font-size 0.12s ease-out;
+     0 0 5px rgba(0, 0, 0, 0.95);
+  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), font-size 0.15s ease-out;
   user-select: none;
+}
+
+/* Survey Station Interactive Tooltip */
+.cad-station-tooltip {
+  background: rgba(15, 23, 42, 0.92) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 6px !important;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(4px) !important;
+}
+.cad-station-tooltip::before {
+  border-top-color: rgba(15, 23, 42, 0.92) !important;
 }
 
 /* Measurement Line Markers */
