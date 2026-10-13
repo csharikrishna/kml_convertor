@@ -1,4 +1,4 @@
-/* CAD2KML Converter Web Client JS — v2.1 */
+/* CAD2KML Converter Web Client JS — v3.0 SaaS Workstation Edition */
 
 let map;
 let geojsonLayerGroup;
@@ -6,18 +6,67 @@ let selectedMarker;
 let uploadedFile = null;
 let lastConversionGeoJSON = null;  // Store for live preview re-render
 let layerVisibility = {};          // Track layer show/hide state
+let layerOpacity = {};             // Track per-layer opacity (0.0 to 1.0)
+let layerColors = {};              // Track resolved layer colors for chips
 let currentMedianTextHeight = 1.0; // Drawing-specific median CAD text height
+
+// Workstation map tools state
+let isMeasurementActive = false;
+let measurePoints = [];
+let measureMarkers = [];
+let measureLines = null;
+let totalMeasureDistance = 0;
+let isFullscreen = false;
 
 const CONVERT_TIMEOUT_MS = 5 * 60 * 1000;
 
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   initMap();
+  initGlassDock();
+  initMeasurementTool();
+  initLiveStatusBar();
+  initSampleDrawing();
   setupDropzone();
   setupFormSubmit();
   setupLivePreviewListeners();
   setupFillToggle();
   setupControls();
 });
+
+// ==========================================
+// Theme Management (Light / Workstation Dark)
+// ==========================================
+function initTheme() {
+  const saved = localStorage.getItem('cad2kml_theme');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (saved === 'dark' || (!saved && prefersDark)) {
+    setTheme('dark');
+  } else {
+    setTheme('light');
+  }
+
+  const toggleBtn = document.getElementById('themeToggleBtn');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const isDark = document.body.classList.contains('dark-theme');
+      setTheme(isDark ? 'light' : 'dark');
+    });
+  }
+}
+
+function setTheme(mode) {
+  const isDark = mode === 'dark';
+  document.body.classList.toggle('dark-theme', isDark);
+  localStorage.setItem('cad2kml_theme', mode);
+
+  const icon = document.getElementById('themeToggleIcon');
+  const text = document.getElementById('themeToggleText');
+  if (icon && text) {
+    icon.innerText = isDark ? '☀️' : '🌙';
+    text.innerText = isDark ? 'Light Mode' : 'Workstation Mode';
+  }
+}
 
 // Escape drawing-supplied text (layer names, TEXT/MTEXT content) before it is used as HTML.
 function escapeHtml(value) {
@@ -33,7 +82,100 @@ function safeColor(value, fallback) {
   return /^#[0-9a-fA-F]{6}$/.test(value || '') ? value : fallback;
 }
 
-// Wire up controls (no inline event handlers: the page runs under a strict CSP)
+// ==========================================
+// Geodesic Math & UTM Calculation Utilities
+// ==========================================
+function computeGeodesicDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // Earth radius in meters
+  const toRad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toRad;
+  const dLon = (lon2 - lon1) * toRad;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function formatDistance(meters) {
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(2)} km (${Math.round(meters).toLocaleString()} m)`;
+  }
+  return `${meters.toFixed(1)} m`;
+}
+
+function calculateFeatureLengthMeters(coords) {
+  if (!Array.isArray(coords) || coords.length < 2) return 0;
+  let sum = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    sum += computeGeodesicDistance(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0]);
+  }
+  return sum;
+}
+
+function calculatePolygonAreaM2(ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return 0;
+  let total = 0;
+  const toRad = Math.PI / 180;
+  const R = 6371000;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const p1 = ring[i];
+    const p2 = ring[i + 1];
+    total += (p2[0] - p1[0]) * toRad * (2 + Math.sin(p1[1] * toRad) + Math.sin(p2[1] * toRad));
+  }
+  return Math.abs(total * R * R / 2);
+}
+
+// Exact WGS84 Transverse Mercator UTM projection (USGS / Karney formula)
+function latLonToUtm(lat, lon, zoneNumber, isNorthern) {
+  const a = 6378137.0; // WGS84 semi-major axis
+  const f = 1 / 298.257223563;
+  const e2 = 2 * f - f * f;
+  const ePrime2 = e2 / (1 - e2);
+  const k0 = 0.9996;
+
+  const latRad = lat * (Math.PI / 180);
+  const lonRad = lon * (Math.PI / 180);
+  const centralLon = ((zoneNumber - 1) * 6 - 180 + 3) * (Math.PI / 180);
+
+  const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) * Math.sin(latRad));
+  const T = Math.tan(latRad) * Math.tan(latRad);
+  const C = ePrime2 * Math.cos(latRad) * Math.cos(latRad);
+  const A = Math.cos(latRad) * (lonRad - centralLon);
+
+  const M = a * (
+    (1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 * e2 * e2 / 256) * latRad -
+    (3 * e2 / 8 + 3 * e2 * e2 / 32 + 45 * e2 * e2 * e2 / 1024) * Math.sin(2 * latRad) +
+    (15 * e2 * e2 / 256 + 45 * e2 * e2 * e2 / 1024) * Math.sin(4 * latRad) -
+    (35 * e2 * e2 * e2 / 3072) * Math.sin(6 * latRad)
+  );
+
+  const easting = 500000 + k0 * N * (
+    A +
+    (1 - T + C) * Math.pow(A, 3) / 6 +
+    (5 - 18 * T + T * T + 72 * C - 58 * ePrime2) * Math.pow(A, 5) / 120
+  );
+
+  let northing = k0 * (
+    M +
+    N * Math.tan(latRad) * (
+      A * A / 2 +
+      (5 - T + 9 * C + 4 * C * C) * Math.pow(A, 4) / 24 +
+      (61 - 58 * T + T * T + 600 * C - 330 * ePrime2) * Math.pow(A, 6) / 720
+    )
+  );
+
+  if (!isNorthern) {
+    northing += 10000000.0;
+  }
+
+  return {
+    easting: Math.round(easting),
+    northing: Math.round(northing)
+  };
+}
+
+// Wire up basic controls
 function setupControls() {
   document.querySelectorAll('[data-conversion-type]').forEach(btn => {
     btn.addEventListener('click', () => setConversionType(btn.dataset.conversionType));
@@ -66,16 +208,18 @@ function setupControls() {
   });
 }
 
-// Initialize Leaflet Satellite Map
+// ==========================================
+// Map Initialization (Crisp Satellite View)
+// ==========================================
 function initMap() {
-  // Center near Kurnool / UTM 44N area by default
   map = L.map('map', {
-    zoomControl: false
+    zoomControl: false,
+    attributionControl: true
   }).setView([15.8281, 78.0373], 11);
 
   L.control.zoom({ position: 'topleft' }).addTo(map);
 
-  // Esri World Imagery Satellite Tile Layer
+  // Esri World Imagery Satellite Tile Layer (The crisp original satellite view)
   L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {
@@ -95,51 +239,416 @@ function initMap() {
 
   geojsonLayerGroup = L.layerGroup().addTo(map);
 
-  // Dynamic zoom-adaptive label sizing
+  // Dynamic zoom-adaptive label sizing and decluttering
   map.on('zoomend', () => {
     updateTextLabelSizes();
   });
 
-  // Click on map to pick location and update UTM zone
+  // Location selector picker mode on map click
   map.on('click', (e) => {
-    updateUTMFromLatLng(e.latlng.lat, e.latlng.lng);
+    if (isMeasurementActive) {
+      const snappedPt = findNearestGeoJsonPoint(e.latlng, 22);
+      handleMeasurementClick(snappedPt ? snappedPt.latlng : e.latlng, snappedPt ? snappedPt.feature : null);
+      return;
+    }
+    if (window.isSelectingLocation) {
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+      updateUTMFromLatLng(lat, lon);
+      window.isSelectingLocation = false;
+      document.getElementById('selectLocationLink').innerText = '📍 Select Location on MAP';
+      map.getContainer().style.cursor = '';
+    }
   });
 
   document.getElementById('selectLocationLink').addEventListener('click', (e) => {
     e.preventDefault();
-    alert('Click anywhere on the map on the right to set your location and auto-detect your UTM zone!');
+    window.isSelectingLocation = !window.isSelectingLocation;
+    if (window.isSelectingLocation) {
+      document.getElementById('selectLocationLink').innerText = '🎯 Click anywhere on the map...';
+      map.getContainer().style.cursor = 'crosshair';
+    } else {
+      document.getElementById('selectLocationLink').innerText = '📍 Select Location on MAP';
+      map.getContainer().style.cursor = '';
+    }
   });
 }
 
-// Update UTM zone via API from lat/lng
-async function updateUTMFromLatLng(lat, lng) {
-  try {
-    if (selectedMarker) {
-      map.removeLayer(selectedMarker);
-    }
-    selectedMarker = L.marker([lat, lng]).addTo(map)
-      .bindPopup(`Selected Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`).openPopup();
+// Snapping helper: find nearest survey point feature within screen pixel tolerance
+function findNearestGeoJsonPoint(latlng, tolerancePx = 22) {
+  if (!map || !lastConversionGeoJSON || !Array.isArray(lastConversionGeoJSON.features)) {
+    return null;
+  }
+  const clickPt = map.latLngToContainerPoint(latlng);
+  let best = null;
+  let minDistance = tolerancePx;
 
+  for (const f of lastConversionGeoJSON.features) {
+    if (f.geometry && f.geometry.type === 'Point') {
+      const ptLatLng = L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0]);
+      const screenPt = map.latLngToContainerPoint(ptLatLng);
+      const d = clickPt.distanceTo(screenPt);
+      if (d < minDistance) {
+        minDistance = d;
+        best = { latlng: ptLatLng, feature: f };
+      }
+    }
+  }
+  return best;
+}
+
+// Vertex snapping helper for polylines and polygons
+function findNearestVertex(latlng, feature, tolerancePx = 20) {
+  if (!map || !feature || !feature.geometry) return null;
+  const clickPt = map.latLngToContainerPoint(latlng);
+  let bestLatLng = null;
+  let bestDist = tolerancePx;
+
+  function checkCoord(coord) {
+    const ptLatLng = L.latLng(coord[1], coord[0]);
+    const screenPt = map.latLngToContainerPoint(ptLatLng);
+    const d = clickPt.distanceTo(screenPt);
+    if (d < bestDist) {
+      bestDist = d;
+      bestLatLng = ptLatLng;
+    }
+  }
+
+  const geom = feature.geometry;
+  if (geom.type === 'LineString') {
+    geom.coordinates.forEach(checkCoord);
+  } else if (geom.type === 'MultiLineString' || geom.type === 'Polygon') {
+    geom.coordinates.forEach(ring => ring.forEach(checkCoord));
+  }
+  return bestLatLng;
+}
+
+// ==========================================
+// Floating Glass Dock Controls
+// ==========================================
+function initGlassDock() {
+  // Fit Extents button
+  const fitBtn = document.getElementById('fitBoundsBtn');
+  if (fitBtn) {
+    fitBtn.addEventListener('click', () => {
+      fitDrawingBounds();
+    });
+  }
+
+  // Fullscreen button
+  const fsBtn = document.getElementById('fullscreenBtn');
+  if (fsBtn) {
+    fsBtn.addEventListener('click', toggleFullscreen);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isFullscreen) {
+      toggleFullscreen();
+    }
+  });
+}
+
+function fitDrawingBounds() {
+  if (!geojsonLayerGroup) return;
+  const layers = geojsonLayerGroup.getLayers();
+  if (layers.length === 0) {
+    alert('No CAD drawing currently loaded on the map.');
+    return;
+  }
+  const firstLayer = layers[0];
+  if (firstLayer && typeof firstLayer.getBounds === 'function') {
+    const bounds = firstLayer.getBounds();
+    if (bounds && bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [50, 50], animate: true });
+    }
+  }
+}
+
+function toggleFullscreen() {
+  const mapCard = document.getElementById('mapCard');
+  const icon = document.getElementById('fullscreenIcon');
+  const text = document.getElementById('fullscreenText');
+  isFullscreen = !isFullscreen;
+
+  mapCard.classList.toggle('fullscreen-mode', isFullscreen);
+  if (icon && text) {
+    icon.innerText = isFullscreen ? '🗗' : '🗖';
+    text.innerText = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen';
+  }
+
+  setTimeout(() => {
+    map.invalidateSize();
+  }, 200);
+}
+
+// ==========================================
+// Distance Measurement Tool
+// ==========================================
+function initMeasurementTool() {
+  const measureBtn = document.getElementById('measureBtn');
+  const clearBtn = document.getElementById('measureClearBtn');
+  const finishBtn = document.getElementById('measureFinishBtn');
+
+  if (measureBtn) {
+    measureBtn.addEventListener('click', () => {
+      setMeasurementActive(!isMeasurementActive);
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', clearMeasurement);
+  }
+
+  if (finishBtn) {
+    finishBtn.addEventListener('click', () => {
+      setMeasurementActive(false);
+    });
+  }
+}
+
+function setMeasurementActive(active) {
+  isMeasurementActive = active;
+  const btn = document.getElementById('measureBtn');
+  const banner = document.getElementById('measureBanner');
+  if (btn) btn.classList.toggle('active', active);
+  if (banner) banner.classList.toggle('active', active);
+
+  const container = map ? map.getContainer() : null;
+  if (container) {
+    container.style.cursor = active ? 'crosshair' : '';
+    container.classList.toggle('measuring-active', active);
+  }
+
+  if (active) {
+    if (map && typeof map.closePopup === 'function') map.closePopup();
+    if (measurePoints.length === 0) {
+      const val = document.getElementById('measureDistanceVal');
+      if (val) val.innerText = 'Click any green survey station or map point to measure';
+    }
+  } else {
+    if (container) container.style.cursor = '';
+  }
+}
+
+function handleMeasurementClick(latlng, sourceFeature) {
+  if (!latlng) return;
+
+  // Prevent duplicate points if user clicked the same location consecutively
+  if (measurePoints.length > 0) {
+    const last = measurePoints[measurePoints.length - 1];
+    if (Math.abs(last.lat - latlng.lat) < 0.0000001 && Math.abs(last.lng - latlng.lng) < 0.0000001) {
+      return;
+    }
+  }
+
+  measurePoints.push(latlng);
+  const ptCount = measurePoints.length;
+
+  // Add vertex marker
+  const marker = L.circleMarker(latlng, {
+    radius: 6,
+    className: 'measure-vertex-marker',
+    fillColor: '#06b6d4',
+    color: '#ffffff',
+    weight: 2.5,
+    opacity: 1,
+    fillOpacity: 1
+  }).addTo(map);
+
+  marker.on('click', (e) => {
+    if (isMeasurementActive) {
+      L.DomEvent.stopPropagation(e);
+    }
+  });
+
+  measureMarkers.push(marker);
+
+  // Update line
+  if (!measureLines) {
+    measureLines = L.polyline(measurePoints, {
+      color: '#06b6d4',
+      weight: 3.5,
+      dashArray: '6, 6',
+      opacity: 0.95
+    }).addTo(map);
+  } else {
+    measureLines.setLatLngs(measurePoints);
+  }
+
+  // Calculate cumulative distance and last segment distance
+  totalMeasureDistance = 0;
+  let lastSegmentDist = 0;
+  for (let i = 0; i < measurePoints.length - 1; i++) {
+    const d = computeGeodesicDistance(
+      measurePoints[i].lat, measurePoints[i].lng,
+      measurePoints[i + 1].lat, measurePoints[i + 1].lng
+    );
+    totalMeasureDistance += d;
+    if (i === measurePoints.length - 2) {
+      lastSegmentDist = d;
+    }
+  }
+
+  const distStr = formatDistance(totalMeasureDistance);
+  const bannerVal = document.getElementById('measureDistanceVal');
+
+  let featureLabel = '';
+  if (sourceFeature && sourceFeature.properties && sourceFeature.properties.title) {
+    featureLabel = sourceFeature.properties.title;
+  }
+
+  if (ptCount === 1) {
+    const startName = featureLabel ? `Start: ${featureLabel}` : 'Start';
+    if (bannerVal) {
+      bannerVal.innerText = `${startName} set. Click next point/station to measure.`;
+    }
+    marker.bindTooltip(startName, { permanent: true, direction: 'top', className: 'measure-segment-tooltip' }).openTooltip();
+  } else {
+    const segStr = formatDistance(lastSegmentDist);
+    if (bannerVal) {
+      bannerVal.innerText = `Total: ${distStr} (Seg: ${segStr}) | ${ptCount} points`;
+    }
+    const tipText = featureLabel ? `${featureLabel}: +${segStr} (${distStr})` : `+${segStr} (${distStr})`;
+    marker.bindTooltip(tipText, { permanent: true, direction: 'top', className: 'measure-segment-tooltip' }).openTooltip();
+  }
+}
+
+function clearMeasurement() {
+  measureMarkers.forEach(m => map.removeLayer(m));
+  measureMarkers = [];
+  if (measureLines) {
+    map.removeLayer(measureLines);
+    measureLines = null;
+  }
+  measurePoints = [];
+  totalMeasureDistance = 0;
+  const val = document.getElementById('measureDistanceVal');
+  if (val) val.innerText = 'Click any green survey station or map point to measure';
+}
+
+// ==========================================
+// Live Coordinate & Map Status Bar
+// ==========================================
+function initLiveStatusBar() {
+  const coordsEl = document.getElementById('statusCoords');
+  const utmEl = document.getElementById('statusUtm');
+  const zoomEl = document.getElementById('statusZoom');
+  const crsEl = document.getElementById('statusCrs');
+
+  let rafId = null;
+
+  map.on('mousemove', (e) => {
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+
+      if (coordsEl) {
+        const latFmt = `${Math.abs(lat).toFixed(5)}°${lat >= 0 ? 'N' : 'S'}`;
+        const lonFmt = `${Math.abs(lon).toFixed(5)}°${lon >= 0 ? 'E' : 'W'}`;
+        coordsEl.innerText = `${latFmt}, ${lonFmt}`;
+      }
+
+      if (utmEl) {
+        try {
+          const epsgSelect = document.getElementById('input_epsg');
+          const currentEpsg = epsgSelect ? epsgSelect.value : 'EPSG:32644';
+          const match = currentEpsg.match(/EPSG:(32[67])(\d{2})/i);
+          if (match) {
+            const isNorthern = match[1] === '326';
+            const zone = parseInt(match[2], 10);
+            const utm = latLonToUtm(lat, lon, zone, isNorthern);
+            utmEl.innerText = `${utm.easting.toLocaleString()} E, ${utm.northing.toLocaleString()} N (Z${zone}${isNorthern ? 'N' : 'S'})`;
+          } else {
+            utmEl.innerText = 'N/A';
+          }
+        } catch {
+          utmEl.innerText = '--';
+        }
+      }
+
+      if (zoomEl) {
+        zoomEl.innerText = map.getZoom();
+      }
+
+      if (crsEl) {
+        const epsgSelect = document.getElementById('input_epsg');
+        crsEl.innerText = epsgSelect ? epsgSelect.value : 'EPSG:32644';
+      }
+    });
+  });
+
+  map.on('mouseout', () => {
+    if (coordsEl) coordsEl.innerText = '--';
+    if (utmEl) utmEl.innerText = '--';
+  });
+}
+
+// ==========================================
+// Try Sample Drawing Demo
+// ==========================================
+function initSampleDrawing() {
+  const sampleBtn = document.getElementById('trySampleBtn');
+  if (!sampleBtn) return;
+
+  sampleBtn.addEventListener('click', async () => {
+    try {
+      sampleBtn.disabled = true;
+      sampleBtn.innerHTML = `
+        <svg class="animate-spin" width="16" height="16" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+        <span>Loading Sample (Althur Padu Bund)...</span>
+      `;
+
+      const res = await fetch('/api/sample-file');
+      if (!res.ok) {
+        throw new Error(`Failed to load sample drawing from server (HTTP ${res.status}).`);
+      }
+      const blob = await res.blob();
+      const sampleFile = new File([blob], 'Althur_padu_bund.dwg', { type: 'application/acad' });
+
+      // Automatically select UTM 44N (the verified CRS for this survey project)
+      const epsgSelect = document.getElementById('input_epsg');
+      if (epsgSelect) {
+        epsgSelect.value = 'EPSG:32644';
+      }
+
+      handleFileSelected(sampleFile);
+
+      // Trigger automatic conversion to demonstrate full workstation
+      document.getElementById('convertBtn').click();
+    } catch (err) {
+      console.error('Error loading sample drawing:', err);
+      showError('Sample File Error', err.message || 'Could not fetch sample drawing.');
+    } finally {
+      sampleBtn.disabled = false;
+      sampleBtn.innerHTML = `
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M13 2v7h7"/></svg>
+        <span>Try Sample Drawing (Althur Padu Bund)</span>
+      `;
+    }
+  });
+}
+
+// Auto-detect UTM zone from map coordinates
+async function updateUTMFromLatLng(lat, lon) {
+  try {
     const formData = new FormData();
     formData.append('lat', lat);
-    formData.append('lon', L.Util.wrapNum(lng, [-180, 180], true));
+    formData.append('lon', lon);
 
     const res = await fetch('/api/utm-zone', {
       method: 'POST',
       body: formData
     });
-    const data = await readJson(res);
-    if (!res.ok) {
-      showError('UTM Zone Unavailable', errorDetail(data, res));
-      return;
-    }
+    const data = await res.json();
 
     if (data.epsg) {
       const selectBox = document.getElementById('input_epsg');
       let found = false;
-      for (const option of selectBox.options) {
-        if (option.value === data.epsg) {
-          option.selected = true;
+      for (let i = 0; i < selectBox.options.length; i++) {
+        if (selectBox.options[i].value === data.epsg) {
+          selectBox.selectedIndex = i;
           found = true;
           break;
         }
@@ -217,7 +726,7 @@ function setConversionType(type) {
     pillRaw.classList.add('active');
     pillStandard.classList.remove('active');
     bannerTitle.innerText = 'Raw Conversion Selected';
-    bannerDesc.innerText = 'Full detail export. Includes text labels, exploded block references, circles, points, and complex geometry.';
+    bannerDesc.innerText = 'Full detail export. Includes text labels, exploded block references, circles, points, and complex polyline geometries.';
   }
 }
 
@@ -287,6 +796,7 @@ function removeSelectedFile() {
   uploadedFile = null;
   document.getElementById('fileInput').value = '';
   document.getElementById('fileCard').style.display = 'none';
+  document.getElementById('statsRibbon').style.display = 'none';
 }
 
 // Accordion Toggle
@@ -310,7 +820,7 @@ function setupFillToggle() {
   });
 }
 
-// Error / warning / success banner helpers
+// Error / warning helpers
 function showError(title, message) {
   document.getElementById('errorTitle').innerText = title;
   document.getElementById('errorMessage').innerText = message;
@@ -334,7 +844,6 @@ function showWarnings(warnings) {
   banner.classList.toggle('active', list.children.length > 0);
 }
 
-// Parse a response body as JSON even when the server/proxy returned HTML or nothing.
 async function readJson(res) {
   const text = await res.text();
   try {
@@ -346,7 +855,7 @@ async function readJson(res) {
 
 function errorDetail(data, res) {
   const detail = data && data.detail;
-  if (Array.isArray(detail)) {  // FastAPI validation errors
+  if (Array.isArray(detail)) {
     return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
   }
   if (typeof detail === 'string' && detail.trim()) return detail;
@@ -357,12 +866,12 @@ function errorDetail(data, res) {
 // Live Preview: Re-render on setting change
 // ==========================================
 function setupLivePreviewListeners() {
-  const settingIds = ['label_scale', 'export_text', 'export_points', 'fill_polygons', 'fill_color', 'fill_opacity'];
+  const settingIds = ['label_scale', 'label_orientation', 'declutter_labels', 'export_text', 'export_points', 'fill_polygons', 'fill_color', 'fill_opacity'];
   settingIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-      if (id === 'label_scale') {
-        el.addEventListener('input', () => {
+      if (id === 'label_scale' || id === 'label_orientation' || id === 'declutter_labels') {
+        el.addEventListener(id === 'label_scale' ? 'input' : 'change', () => {
           updateTextLabelSizes();
         });
       } else {
@@ -383,44 +892,136 @@ function setupLivePreviewListeners() {
   });
 }
 
-// Calculate dynamic zoom-adaptive & CAD-text-height-aware font size
 function calculateLabelFontSize(textHeight, labelScale, zoom) {
   const currentZoom = (zoom !== undefined && zoom !== null) ? zoom : (map ? map.getZoom() : 15);
-  // Reference zoom level is 15 (typical corridor view)
-  // Scale dynamically with zoom: smaller at overview to prevent collisions, larger when zoomed in
   const zoomDiff = currentZoom - 15;
-  const zoomFactor = Math.max(0.6, Math.min(1.7, Math.pow(1.10, zoomDiff)));
+  let zoomFactor;
+  if (zoomDiff >= 0) {
+    zoomFactor = Math.pow(1.25, zoomDiff);
+  } else {
+    zoomFactor = Math.pow(1.15, zoomDiff);
+  }
 
-  // Relative CAD height scaling: relative to drawing's median text height
   let cadHeightFactor = 1.0;
   const h = Number(textHeight);
   if (h > 0 && currentMedianTextHeight > 0) {
     const ratio = h / currentMedianTextHeight;
-    // Sub-linear scaling (sqrt) preserves visual hierarchy without exploding in size
-    cadHeightFactor = Math.max(0.7, Math.min(1.8, Math.sqrt(ratio)));
+    cadHeightFactor = Math.max(0.6, Math.min(2.0, Math.sqrt(ratio)));
   }
 
-  // Base font size for 1.0 scale: 13px
-  const basePx = 13.0;
+  const basePx = 14.0;
   const calculatedPx = basePx * labelScale * zoomFactor * cadHeightFactor;
-  return Math.max(8, Math.min(28, Math.round(calculatedPx)));
+  return Math.max(8, Math.min(42, Math.round(calculatedPx)));
 }
 
-// Update all visible CAD text labels instantly without rebuilding map layers
 function updateTextLabelSizes() {
   if (!map) return;
   const labelScale = parseFloat(document.getElementById('label_scale')?.value) || 0.7;
+  const orientation = document.getElementById('label_orientation')?.value || 'cad';
   const currentZoom = map.getZoom();
   const labels = document.querySelectorAll('.cad-label-text');
+
   labels.forEach(el => {
     const textHeight = parseFloat(el.getAttribute('data-text-height')) || 0;
     const newSize = calculateLabelFontSize(textHeight, labelScale, currentZoom);
     el.style.fontSize = `${newSize}px`;
+
+    const anchorX = parseFloat(el.getAttribute('data-anchor-x')) || 0.0;
+    const anchorY = parseFloat(el.getAttribute('data-anchor-y')) || 0.5;
+    const rotation = parseFloat(el.getAttribute('data-rotation')) || 0;
+    const pctX = Math.round(anchorX * 100);
+    const pctY = Math.round(anchorY * 100);
+
+    if (orientation !== 'horizontal' && Math.abs(rotation) > 0.01) {
+      let cssAngle = (-rotation) % 360;
+      if (cssAngle < 0) cssAngle += 360;
+      if (orientation === 'cad_upright' && cssAngle > 90 && cssAngle < 270) {
+        cssAngle = (cssAngle + 180) % 360;
+      }
+      el.style.transformOrigin = `${pctX}% ${pctY}%`;
+      el.style.transform = `translate(-${pctX}%, -${pctY}%) rotate(${cssAngle}deg)`;
+    } else {
+      el.style.transformOrigin = `${pctX}% ${pctY}%`;
+      el.style.transform = `translate(-${pctX}%, -${pctY}%)`;
+    }
+  });
+  declutterTextLabels();
+}
+
+function declutterTextLabels() {
+  if (!map) return;
+  const declutterEl = document.getElementById('declutter_labels');
+  const declutterEnabled = declutterEl ? declutterEl.checked : true;
+  const labels = Array.from(document.querySelectorAll('.cad-label-text'));
+  if (labels.length === 0) return;
+
+  if (!declutterEnabled) {
+    labels.forEach(el => {
+      el.style.opacity = '1';
+      el.style.pointerEvents = 'auto';
+    });
+    return;
+  }
+
+  labels.sort((a, b) => {
+    const ha = parseFloat(a.getAttribute('data-text-height')) || 0;
+    const hb = parseFloat(b.getAttribute('data-text-height')) || 0;
+    if (Math.abs(ha - hb) > 0.1) return hb - ha;
+
+    const ta = a.textContent || '';
+    const tb = b.textContent || '';
+    const isMilestoneA = /\.000/.test(ta) || /KM\s*\d+(\.0+)?$/i.test(ta);
+    const isMilestoneB = /\.000/.test(tb) || /KM\s*\d+(\.0+)?$/i.test(tb);
+    if (isMilestoneA && !isMilestoneB) return -1;
+    if (!isMilestoneA && isMilestoneB) return 1;
+
+    return ta.localeCompare(tb);
+  });
+
+  const occupied = [];
+
+  labels.forEach(el => {
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      el.style.opacity = '0';
+      el.style.pointerEvents = 'none';
+      return;
+    }
+
+    let collides = false;
+    for (let i = 0; i < occupied.length; i++) {
+      const o = occupied[i];
+      const overlapX = Math.max(0, Math.min(rect.right, o.right) - Math.max(rect.left, o.left));
+      const overlapY = Math.max(0, Math.min(rect.bottom, o.bottom) - Math.max(rect.top, o.top));
+      const overlapArea = overlapX * overlapY;
+      const minArea = Math.min(rect.width * rect.height, o.width * o.height);
+
+      if (overlapArea > 0 && (overlapArea / minArea) > 0.20) {
+        collides = true;
+        break;
+      }
+    }
+
+    if (collides) {
+      el.style.opacity = '0';
+      el.style.pointerEvents = 'none';
+    } else {
+      el.style.opacity = '1';
+      el.style.pointerEvents = 'auto';
+      occupied.push({
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      });
+    }
   });
 }
 
 // ==========================================
-// GeoJSON Preview Rendering
+// GeoJSON Preview Rendering & Layer System
 // ==========================================
 function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
   geojsonLayerGroup.clearLayers();
@@ -428,11 +1029,11 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
   const showText = document.getElementById('export_text').checked;
   const showPoints = document.getElementById('export_points').checked;
   const labelScale = parseFloat(document.getElementById('label_scale').value) || 0.7;
+  const orientation = document.getElementById('label_orientation')?.value || 'cad';
   const fillPolygons = document.getElementById('fill_polygons').checked;
   const fillColor = document.getElementById('fill_color').value;
   const fillOpacity = parseFloat(document.getElementById('fill_opacity').value) / 100;
 
-  // Compute drawing's median CAD text height for relative proportionality
   const textHeights = (geojson.features || [])
     .filter(f => f.properties && f.properties.type === 'text' && Number(f.properties.text_height) > 0)
     .map(f => Number(f.properties.text_height))
@@ -451,6 +1052,12 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
     if (type === 'point' && !showPoints) return false;
     const layerName = f.properties.layer || 'Default';
     layerSet.add(layerName);
+
+    // Track color for layer chip
+    if (!layerColors[layerName]) {
+      layerColors[layerName] = f.properties.stroke || f.properties.color || f.properties.label_color || '#3b82f6';
+    }
+
     if (layerVisibility[layerName] === false) return false;
     return true;
   });
@@ -460,18 +1067,35 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
   const geojsonLayer = L.geoJSON({ type: 'FeatureCollection', features: filteredFeatures }, {
     style: (feature) => {
       const props = feature.properties;
+      const layerName = props.layer || 'Default';
+      const userAlpha = (layerOpacity[layerName] !== undefined) ? layerOpacity[layerName] : 1.0;
+
+      if (feature.geometry.type === 'Point') {
+        const ptColor = safeColor(props.color, '#10b981');
+        return {
+          radius: 4.5,
+          fillColor: ptColor,
+          fillOpacity: 1.0 * userAlpha,
+          color: '#1e293b',
+          weight: 1.5,
+          fill: true,
+          opacity: userAlpha
+        };
+      }
+
       const baseStyle = {
         color: safeColor(props.stroke, '#ef4444'),
         weight: props['stroke-width'] || 2.5,
-        opacity: 0.9,
+        opacity: 0.9 * userAlpha,
       };
+
       if (feature.geometry.type === 'Polygon') {
-        if (props.filled) {  // HATCH areas keep their own color
+        if (props.filled) {
           baseStyle.fillColor = safeColor(props.fill, '#ef4444');
-          baseStyle.fillOpacity = props['fill-opacity'] ?? 0.3;
+          baseStyle.fillOpacity = (props['fill-opacity'] ?? 0.3) * userAlpha;
         } else {
           baseStyle.fillColor = fillPolygons ? fillColor : safeColor(props.fill, '#ef4444');
-          baseStyle.fillOpacity = fillPolygons ? fillOpacity : (props['fill-opacity'] ?? 0.1);
+          baseStyle.fillOpacity = (fillPolygons ? fillOpacity : (props['fill-opacity'] ?? 0.1)) * userAlpha;
         }
       } else {
         baseStyle.fill = false;
@@ -480,34 +1104,150 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
     },
     pointToLayer: (feature, latlng) => {
       const props = feature.properties;
+      const layerName = props.layer || 'Default';
+      const userAlpha = (layerOpacity[layerName] !== undefined) ? layerOpacity[layerName] : 1.0;
+
       if (props.type === 'text') {
         const textHeight = Number(props.text_height) || 0;
         const fontSize = calculateLabelFontSize(textHeight, labelScale, currentZoom);
         const rotation = Number(props.rotation) || 0;
-        const labelColor = safeColor(props.label_color, '#00ff00');
+        const labelColor = safeColor(props.label_color, '#ff0000');
+        const anchorX = (props.anchor_x !== undefined && props.anchor_x !== null) ? Number(props.anchor_x) : 0.0;
+        const anchorY = (props.anchor_y !== undefined && props.anchor_y !== null) ? Number(props.anchor_y) : 0.5;
+        const fontWeight = props.bold ? '700' : '600';
+        const fontStyle = props.italic ? 'italic' : 'normal';
+        const fontFamily = props.font_family ? `"${props.font_family}", sans-serif` : 'inherit';
+
+        const pctX = Math.round(anchorX * 100);
+        const pctY = Math.round(anchorY * 100);
+        let transformStyle = `transform-origin: ${pctX}% ${pctY}%; transform: translate(-${pctX}%, -${pctY}%);`;
+
+        if (orientation !== 'horizontal' && Math.abs(rotation) > 0.01) {
+          let cssAngle = (-rotation) % 360;
+          if (cssAngle < 0) cssAngle += 360;
+          if (orientation === 'cad_upright' && cssAngle > 90 && cssAngle < 270) {
+            cssAngle = (cssAngle + 180) % 360;
+          }
+          transformStyle = `transform-origin: ${pctX}% ${pctY}%; transform: translate(-${pctX}%, -${pctY}%) rotate(${cssAngle}deg);`;
+        }
 
         return L.marker(latlng, {
           icon: L.divIcon({
             className: 'map-text-label',
-            html: `<span class="cad-label-text" data-text-height="${textHeight}" style="color: ${labelColor}; font-size: ${fontSize}px; transform: rotate(${-rotation}deg);">${escapeHtml(props.title)}</span>`,
-            iconSize: [null, null],
-            iconAnchor: [0, fontSize / 2]
+            html: `<span class="cad-label-text" data-text-height="${textHeight}" data-anchor-x="${anchorX}" data-anchor-y="${anchorY}" data-rotation="${rotation}" style="color: ${labelColor}; font-size: ${fontSize}px; font-weight: ${fontWeight}; font-style: ${fontStyle}; font-family: ${fontFamily}; opacity: ${userAlpha}; ${transformStyle}">${escapeHtml(props.title)}</span>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
           })
         });
       }
       return L.circleMarker(latlng, {
-        radius: 6,
+        radius: 4.5,
+        className: 'survey-station-marker',
         fillColor: safeColor(props.color, '#10b981'),
-        color: '#ffffff',
+        color: '#1e293b',
         weight: 1.5,
-        opacity: 1,
-        fillOpacity: 0.9
+        opacity: userAlpha,
+        fillOpacity: 1.0 * userAlpha
       });
     },
     onEachFeature: (feature, layer) => {
       const props = feature.properties;
+      const geomType = feature.geometry.type;
+
+      // Guard layer.openPopup: during measurement mode, do not open popups
+      if (typeof layer.openPopup === 'function') {
+        const origOpenPopup = layer.openPopup;
+        layer.openPopup = function() {
+          if (isMeasurementActive) return this;
+          return origOpenPopup.apply(this, arguments);
+        };
+      }
+
+      // Click handler: route to measurement tool when measuring is active
+      layer.on('click', (e) => {
+        if (isMeasurementActive) {
+          L.DomEvent.stopPropagation(e);
+          if (e.originalEvent) {
+            e.originalEvent.stopPropagation();
+            e.originalEvent.preventDefault();
+          }
+          if (typeof layer.closePopup === 'function') layer.closePopup();
+          if (map && typeof map.closePopup === 'function') map.closePopup();
+
+          let targetLatLng = null;
+          if (typeof layer.getLatLng === 'function') {
+            targetLatLng = layer.getLatLng();
+          } else if (e.latlng) {
+            const snapped = findNearestVertex(e.latlng, feature, 20);
+            targetLatLng = snapped || e.latlng;
+          }
+
+          if (targetLatLng) {
+            handleMeasurementClick(targetLatLng, feature);
+          }
+          return;
+        }
+      });
+
+      // Hover inspection glow & measurement snapping feedback
+      layer.on({
+        mouseover: (e) => {
+          if (isMeasurementActive) {
+            if (geomType === 'Point' && typeof layer.setRadius === 'function') {
+              layer.setRadius(7.5);
+              layer.setStyle({ fillColor: '#06b6d4', color: '#ffffff', weight: 2.5 });
+              const label = props ? (props.title || props.layer || 'Station') : 'Station';
+              layer.bindTooltip(`🎯 ${label}`, { permanent: false, direction: 'top', className: 'measure-snap-tooltip' }).openTooltip();
+            }
+            return;
+          }
+          if (typeof layer.setStyle === 'function' && geomType !== 'Point') {
+            layer.setStyle({ weight: (props['stroke-width'] || 2.5) + 2.5, color: '#38bdf8' });
+          }
+          showFeatureInspector(feature);
+        },
+        mouseout: (e) => {
+          if (isMeasurementActive) {
+            if (geomType === 'Point' && typeof layer.setRadius === 'function') {
+              layer.setRadius(4.5);
+              const userAlpha = (layerOpacity[props.layer || 'Default'] !== undefined) ? layerOpacity[props.layer || 'Default'] : 1.0;
+              layer.setStyle({
+                fillColor: safeColor(props.color, '#10b981'),
+                color: '#1e293b',
+                weight: 1.5,
+                fillOpacity: 1.0 * userAlpha
+              });
+              if (layer.unbindTooltip && (!layer.getTooltip() || !layer.getTooltip().options.permanent)) {
+                layer.unbindTooltip();
+              }
+            }
+            return;
+          }
+          if (typeof layer.setStyle === 'function' && geomType !== 'Point') {
+            const layerName = props.layer || 'Default';
+            const userAlpha = (layerOpacity[layerName] !== undefined) ? layerOpacity[layerName] : 1.0;
+            layer.setStyle({
+              weight: props['stroke-width'] || 2.5,
+              color: safeColor(props.stroke, '#ef4444'),
+              opacity: 0.9 * userAlpha
+            });
+          }
+          hideFeatureInspector();
+        }
+      });
+
       if (props && props.layer) {
-        layer.bindPopup(`<strong>Layer:</strong> ${escapeHtml(props.layer)}<br>${escapeHtml(props.title || '')}`);
+        if (props.type === 'text') {
+          layer.bindPopup(
+            `<strong>Text Label</strong><br>` +
+            `<strong>Text:</strong> ${escapeHtml(props.title || '')}<br>` +
+            `<strong>Layer:</strong> ${escapeHtml(props.layer)}<br>` +
+            `<strong>Height:</strong> ${props.text_height || 'N/A'}<br>` +
+            `<strong>Rotation:</strong> ${(props.rotation || 0).toFixed(1)}°`
+          );
+        } else {
+          layer.bindPopup(`<strong>Layer:</strong> ${escapeHtml(props.layer)}<br>${escapeHtml(props.title || '')}`);
+        }
       }
     }
   });
@@ -520,10 +1260,56 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
   }
 
   buildLayerPanel(layerSet);
+  requestAnimationFrame(() => {
+    updateTextLabelSizes();
+  });
 }
 
 // ==========================================
-// Layer Toggle Panel
+// Feature Hover Inspector Tooltip
+// ==========================================
+function showFeatureInspector(feature) {
+  const card = document.getElementById('featureInspectorCard');
+  if (!card) return;
+
+  const props = feature.properties || {};
+  const geomType = feature.geometry.type;
+
+  document.getElementById('inspectorLayer').innerText = `Layer: ${props.layer || 'Default'}`;
+  document.getElementById('inspectorType').innerText = props.type === 'text' ? 'Text Label' : geomType;
+
+  const lengthRow = document.getElementById('inspectorLengthRow');
+  const areaRow = document.getElementById('inspectorAreaRow');
+
+  if (geomType === 'LineString') {
+    const len = calculateFeatureLengthMeters(feature.geometry.coordinates);
+    lengthRow.style.display = 'flex';
+    document.getElementById('inspectorLength').innerText = formatDistance(len);
+    areaRow.style.display = 'none';
+    document.getElementById('inspectorVertices').innerText = feature.geometry.coordinates.length;
+  } else if (geomType === 'Polygon') {
+    const ring = feature.geometry.coordinates[0] || [];
+    const areaM2 = calculatePolygonAreaM2(ring);
+    areaRow.style.display = 'flex';
+    document.getElementById('inspectorArea').innerText = `${Math.round(areaM2).toLocaleString()} m² (${(areaM2 / 10000).toFixed(2)} ha)`;
+    lengthRow.style.display = 'none';
+    document.getElementById('inspectorVertices').innerText = ring.length;
+  } else {
+    lengthRow.style.display = 'none';
+    areaRow.style.display = 'none';
+    document.getElementById('inspectorVertices').innerText = '1';
+  }
+
+  card.classList.add('active');
+}
+
+function hideFeatureInspector() {
+  const card = document.getElementById('featureInspectorCard');
+  if (card) card.classList.remove('active');
+}
+
+// ==========================================
+// Enhanced Layer Management Panel
 // ==========================================
 function buildLayerPanel(layerSet) {
   const panel = document.getElementById('layerPanel');
@@ -534,20 +1320,44 @@ function buildLayerPanel(layerSet) {
     return;
   }
 
-  // Skip rebuilding when the layer count is unchanged, so the checkbox that was just
-  // clicked keeps focus.
-  if (body.children.length === layerSet.size) {
-    return;
+  body.replaceChildren();
+
+  // Quick All On / All Off buttons
+  const allOnBtn = document.getElementById('layerAllOnBtn');
+  const allOffBtn = document.getElementById('layerAllOffBtn');
+  if (allOnBtn) {
+    allOnBtn.onclick = () => {
+      layerSet.forEach(l => { layerVisibility[l] = true; });
+      if (lastConversionGeoJSON) renderGeoJSONPreview(lastConversionGeoJSON, false);
+      buildLayerPanel(layerSet);
+    };
+  }
+  if (allOffBtn) {
+    allOffBtn.onclick = () => {
+      layerSet.forEach(l => { layerVisibility[l] = false; });
+      if (lastConversionGeoJSON) renderGeoJSONPreview(lastConversionGeoJSON, false);
+      buildLayerPanel(layerSet);
+    };
   }
 
-  body.replaceChildren();
   [...layerSet].sort().forEach((layerName, index) => {
     if (layerVisibility[layerName] === undefined) {
       layerVisibility[layerName] = true;
     }
+    if (layerOpacity[layerName] === undefined) {
+      layerOpacity[layerName] = 1.0;
+    }
 
     const row = document.createElement('div');
     row.className = 'layer-row';
+
+    // Header line: Color chip + checkbox + name
+    const headerLine = document.createElement('div');
+    headerLine.className = 'layer-header-line';
+
+    const colorChip = document.createElement('span');
+    colorChip.className = 'layer-color-chip';
+    colorChip.style.backgroundColor = layerColors[layerName] || '#3b82f6';
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
@@ -562,10 +1372,37 @@ function buildLayerPanel(layerSet) {
 
     const label = document.createElement('label');
     label.htmlFor = checkbox.id;
+    label.className = 'layer-name-lbl';
     label.textContent = layerName;
 
-    row.appendChild(checkbox);
-    row.appendChild(label);
+    headerLine.appendChild(colorChip);
+    headerLine.appendChild(checkbox);
+    headerLine.appendChild(label);
+
+    // Sub-line: Opacity slider
+    const sliderLine = document.createElement('div');
+    sliderLine.className = 'layer-slider-line';
+
+    const opacitySpan = document.createElement('span');
+    opacitySpan.textContent = 'Opacity:';
+
+    const opacitySlider = document.createElement('input');
+    opacitySlider.type = 'range';
+    opacitySlider.min = '0';
+    opacitySlider.max = '100';
+    opacitySlider.value = Math.round(layerOpacity[layerName] * 100);
+    opacitySlider.addEventListener('input', () => {
+      layerOpacity[layerName] = parseFloat(opacitySlider.value) / 100;
+      if (lastConversionGeoJSON) {
+        renderGeoJSONPreview(lastConversionGeoJSON, false);
+      }
+    });
+
+    sliderLine.appendChild(opacitySpan);
+    sliderLine.appendChild(opacitySlider);
+
+    row.appendChild(headerLine);
+    row.appendChild(sliderLine);
     body.appendChild(row);
   });
 
@@ -585,6 +1422,92 @@ function toggleLayerPanel() {
 }
 
 // ==========================================
+// 4-Step Honest Conversion Progress
+// ==========================================
+function updateConversionProgress(activeStep, percent) {
+  const progress = document.getElementById('conversionProgress');
+  const pctText = document.getElementById('progressStepPercent');
+  if (!progress) return;
+
+  progress.style.display = 'block';
+  if (pctText) pctText.innerText = `${percent}%`;
+
+  for (let i = 1; i <= 4; i++) {
+    const stepEl = document.getElementById(`step${i}`);
+    if (!stepEl) continue;
+
+    if (i < activeStep) {
+      stepEl.className = 'step-item done';
+      stepEl.querySelector('.step-indicator').innerText = '✓';
+    } else if (i === activeStep) {
+      stepEl.className = 'step-item active';
+      stepEl.querySelector('.step-indicator').innerText = `${i}`;
+    } else {
+      stepEl.className = 'step-item';
+      stepEl.querySelector('.step-indicator').innerText = `${i}`;
+    }
+  }
+}
+
+function completeConversionProgress() {
+  const pctText = document.getElementById('progressStepPercent');
+  if (pctText) pctText.innerText = '100%';
+  for (let i = 1; i <= 4; i++) {
+    const stepEl = document.getElementById(`step${i}`);
+    if (stepEl) {
+      stepEl.className = 'step-item done';
+      stepEl.querySelector('.step-indicator').innerText = '✓';
+    }
+  }
+  setTimeout(() => {
+    const progress = document.getElementById('conversionProgress');
+    if (progress) progress.style.display = 'none';
+  }, 1600);
+}
+
+// ==========================================
+// CAD Statistics Ribbon
+// ==========================================
+function updateCADStatsRibbon(geojson, stats) {
+  const ribbon = document.getElementById('statsRibbon');
+  if (!ribbon || !geojson) return;
+
+  // Calculate real total linear length across all polylines
+  let totalLengthMeters = 0;
+  (geojson.features || []).forEach(f => {
+    if (f.geometry && f.geometry.type === 'LineString') {
+      totalLengthMeters += calculateFeatureLengthMeters(f.geometry.coordinates);
+    }
+  });
+
+  const entVal = document.getElementById('statEntities');
+  const lenVal = document.getElementById('statLength');
+  const lblVal = document.getElementById('statLabels');
+  const ptVal = document.getElementById('statPoints');
+  const crsVal = document.getElementById('statCrs');
+  const fmtVal = document.getElementById('statFormat');
+
+  if (entVal) entVal.innerText = stats.total_entities || (stats.total_shapes + stats.total_markers) || '0';
+  if (lenVal) lenVal.innerText = formatDistance(totalLengthMeters);
+  if (lblVal) lblVal.innerText = stats.labels || '0';
+  if (ptVal) ptVal.innerText = stats.points || '0';
+
+  if (crsVal) {
+    const epsgSelect = document.getElementById('input_epsg');
+    const selectedCrs = epsgSelect ? epsgSelect.value : 'EPSG:32644';
+    const match = selectedCrs.match(/326(\d{2})/);
+    crsVal.innerText = match ? `UTM ${match[1]}N` : selectedCrs;
+  }
+
+  if (fmtVal) {
+    const fmtSelect = document.getElementById('output_format');
+    fmtVal.innerText = (fmtSelect ? fmtSelect.value : 'kml').toUpperCase();
+  }
+
+  ribbon.style.display = 'flex';
+}
+
+// ==========================================
 // Form Submit & Conversion API Call
 // ==========================================
 function setupFormSubmit() {
@@ -601,7 +1524,7 @@ function setupFormSubmit() {
     showWarnings([]);
 
     if (!uploadedFile) {
-      showError('No File Selected', 'Please upload a .DXF file first.');
+      showError('No File Selected', 'Please upload a .DXF or .DWG file first.');
       return;
     }
 
@@ -611,13 +1534,16 @@ function setupFormSubmit() {
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
       </svg>
-      Converting CAD Drawing...
+      Processing Workstation Conversion...
     `;
 
     successBanner.classList.remove('active');
     geojsonLayerGroup.clearLayers();
     lastConversionGeoJSON = null;
     layerVisibility = {};
+    layerOpacity = {};
+
+    updateConversionProgress(1, 15);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CONVERT_TIMEOUT_MS);
@@ -631,6 +1557,10 @@ function setupFormSubmit() {
       formData.set('fill_opacity', (parseFloat(document.getElementById('fill_opacity').value) / 100).toFixed(2));
       formData.set('output_format', document.getElementById('output_format').value);
 
+      // Honest stage progression
+      setTimeout(() => updateConversionProgress(2, 45), 250);
+      setTimeout(() => updateConversionProgress(3, 75), 650);
+
       const res = await fetch('/api/convert', {
         method: 'POST',
         body: formData,
@@ -642,29 +1572,59 @@ function setupFormSubmit() {
         throw new Error(errorDetail(data, res));
       }
 
+      updateConversionProgress(4, 90);
+
       if (data.geojson && Array.isArray(data.geojson.features)) {
         lastConversionGeoJSON = data.geojson;
         renderGeoJSONPreview(data.geojson, true);
+        updateCADStatsRibbon(data.geojson, data.stats);
       }
+
+      completeConversionProgress();
 
       const warnings = [...(data.warnings || [])];
       if (data.preview_truncated) {
-        warnings.push('The map preview shows only part of this large drawing; the downloaded file is complete.');
+        warnings.push('The in-browser preview was capped at 150,000 vertices; the downloaded KML file contains the full geometry.');
       }
       showWarnings(warnings);
 
       downloadBtn.href = data.download_url;
-      if (data.filename) {
-        downloadBtn.setAttribute('download', data.filename);
-      }
+      const downloadFilename = data.filename || 'converted_drawing.kml';
+      downloadBtn.setAttribute('download', downloadFilename);
+      downloadBtn.onclick = async (ev) => {
+        ev.preventDefault();
+        try {
+          const dlRes = await fetch(downloadBtn.href);
+          if (!dlRes.ok) throw new Error(`Download request returned HTTP ${dlRes.status}`);
+          const blob = await dlRes.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = blobUrl;
+          a.download = downloadFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        } catch (err) {
+          console.warn('Blob download fallback to direct link:', err);
+          window.location.href = downloadBtn.href;
+        }
+      };
+
       successSummary.innerText = `Successfully projected ${data.stats.total_shapes} shapes and ${data.stats.total_markers} markers into Google Earth format.`;
       successBanner.classList.add('active');
 
     } catch (err) {
-      const message = err.name === 'AbortError'
-        ? 'The conversion took too long and was cancelled. Try a smaller drawing or remove unneeded layers.'
-        : err.message;
-      showError('Conversion Failed', message);
+      console.error('Conversion failed:', err);
+      const progress = document.getElementById('conversionProgress');
+      if (progress) progress.style.display = 'none';
+
+      if (err.name === 'AbortError') {
+        showError('Conversion Timed Out', 'The conversion took longer than expected. Please verify your file or try standard mode.');
+      } else {
+        showError('Conversion Failed', err.message || 'An unexpected error occurred during CAD conversion.');
+      }
     } finally {
       clearTimeout(timer);
       convertBtn.disabled = false;

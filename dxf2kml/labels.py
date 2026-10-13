@@ -33,6 +33,8 @@ class LabelData:
     font_family: Optional[str] = None
     bold: bool = False
     italic: bool = False
+    anchor_x: float = 0.0                    # 0.0=Left, 0.5=Center, 1.0=Right
+    anchor_y: float = 0.5                    # 0.0=Top, 0.5=Middle, 1.0=Bottom/Baseline
     entity_type: str = "TEXT"                # "TEXT", "MTEXT" or "ATTRIB"
 
 
@@ -296,15 +298,51 @@ def parse_text_entity(entity) -> Optional[LabelData]:
         if position is None:
             return None
 
+        # Horizontal alignment: 0=Left, 1=Center, 2=Right, 3=Aligned, 4=Middle, 5=Fit
+        halign = int(entity.dxf.get("halign", 0))
+        # Vertical alignment: 0=Baseline, 1=Bottom, 2=Middle, 3=Top
+        valign = int(entity.dxf.get("valign", 0))
+
+        if halign in (1, 3, 4, 5):
+            anchor_x = 0.5
+        elif halign == 2:
+            anchor_x = 1.0
+        else:
+            anchor_x = 0.0
+
+        if halign == 4:
+            anchor_y = 0.5
+        elif valign == 3:
+            anchor_y = 0.0
+        elif valign == 2:
+            anchor_y = 0.5
+        elif valign == 1:
+            anchor_y = 1.0
+        else:
+            anchor_y = 0.8  # baseline (near bottom of glyphs)
+
+        # Calculate true WCS rotation (accounting for OCS extrusion e.g. mirrored text)
+        rot_deg = float(entity.dxf.get("rotation", 0.0))
+        ocs = entity.ocs()
+        if ocs and ocs.transform:
+            rad = math.radians(rot_deg)
+            v0 = ocs.to_wcs((0.0, 0.0, 0.0))
+            v1 = ocs.to_wcs((math.cos(rad), math.sin(rad), 0.0))
+            rotation = (math.degrees(math.atan2(v1.y - v0.y, v1.x - v0.x))) % 360.0
+        else:
+            rotation = rot_deg % 360.0
+
         style_name = entity.dxf.get("style", "Standard")
         return LabelData(
             text=text,
             position=position,
-            rotation=float(entity.dxf.get("rotation", 0.0)),
+            rotation=rotation,
             height=float(entity.dxf.get("height", 1.0)),
             layer=str(entity.dxf.get("layer", "0")),
             color_aci=entity.dxf.get("color", None),
             font_family=style_name if style_name and style_name != "Standard" else None,
+            anchor_x=anchor_x,
+            anchor_y=anchor_y,
             entity_type=entity.dxftype(),
         )
     except Exception as e:
@@ -313,7 +351,7 @@ def parse_text_entity(entity) -> Optional[LabelData]:
 
 
 def parse_mtext_entity(entity) -> Optional[LabelData]:
-    """Extract metadata from MTEXT entity with attachment point offset and inline formatting."""
+    """Extract metadata from MTEXT entity with attachment point anchors and inline formatting."""
     try:
         fmt = extract_mtext_formatting(entity.text)
         text = fmt.clean_text
@@ -321,27 +359,31 @@ def parse_mtext_entity(entity) -> Optional[LabelData]:
             return None
 
         pos = entity.dxf.insert  # MTEXT insert is stored in WCS
-        rotation = float(entity.get_rotation())  # honours text_direction as well as rotation
+        rotation = float(entity.get_rotation()) % 360.0
         char_height = float(entity.dxf.get("char_height", 1.0))
 
         if fmt.inline_height is not None:
             char_height = fmt.inline_height * char_height if fmt.inline_height_relative else fmt.inline_height
 
-        dx, dy = _calculate_mtext_center_offset(
-            attachment_point=entity.dxf.get("attachment_point", 1),
-            width=float(entity.dxf.get("width", 0) or 0),
-            char_height=char_height,
-            text=text
-        )
+        # Attachment point grid (AutoCAD DXF Group 71):
+        # 1=TopLeft      2=TopCenter      3=TopRight
+        # 4=MiddleLeft   5=MiddleCenter   6=MiddleRight
+        # 7=BottomLeft   8=BottomCenter   9=BottomRight
+        att = int(entity.dxf.get("attachment_point", 1))
+        if att not in range(1, 10):
+            att = 1
 
-        if rotation != 0:
-            rad = math.radians(rotation)
-            cos_r, sin_r = math.cos(rad), math.sin(rad)
-            dx, dy = dx * cos_r - dy * sin_r, dx * sin_r + dy * cos_r
+        col = (att - 1) % 3   # 0=Left, 1=Center, 2=Right
+        row = (att - 1) // 3  # 0=Top, 1=Middle, 2=Bottom
 
+        anchor_x = 0.0 if col == 0 else (0.5 if col == 1 else 1.0)
+        anchor_y = 0.0 if row == 0 else (0.5 if row == 1 else 1.0)
+
+        # In AutoCAD, MTEXT insertion point (group 10,20,30) IS the exact attachment point.
+        # It rotates around this attachment point.
         return LabelData(
             text=text,
-            position=(float(pos.x) + dx, float(pos.y) + dy, float(pos.z)),
+            position=(float(pos.x), float(pos.y), float(pos.z)),
             rotation=rotation,
             height=char_height,
             layer=str(entity.dxf.get("layer", "0")),
@@ -350,6 +392,8 @@ def parse_mtext_entity(entity) -> Optional[LabelData]:
             font_family=fmt.font_family,
             bold=fmt.bold,
             italic=fmt.italic,
+            anchor_x=anchor_x,
+            anchor_y=anchor_y,
             entity_type="MTEXT"
         )
     except Exception as e:

@@ -189,8 +189,8 @@ PAGE_CSP = (
     "script-src 'self' https://unpkg.com; "
     "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; "
     "font-src https://fonts.gstatic.com; "
-    "img-src 'self' data: https://unpkg.com https://server.arcgisonline.com; "
-    "connect-src 'self' https://nominatim.openstreetmap.org; "
+    "img-src 'self' data: https://unpkg.com https://server.arcgisonline.com https://services.arcgisonline.com https://tile.openstreetmap.org https://*.basemaps.cartocdn.com https://basemaps.cartocdn.com; "
+    "connect-src 'self' https://nominatim.openstreetmap.org https://tile.openstreetmap.org; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
 
@@ -410,7 +410,8 @@ def convert_file(
         job_dir.mkdir(parents=True)
         input_size = _copy_upload(file, input_path)
         result = convert(input_path, output_path, cfg, output_format=fmt,
-                         collect_preview=True, preview_max_vertices=PREVIEW_MAX_VERTICES)
+                         collect_preview=True, preview_max_vertices=PREVIEW_MAX_VERTICES,
+                         document_name=Path(raw_filename).stem)
     except ConversionError as ex:
         shutil.rmtree(job_dir, ignore_errors=True)
         _count("failed")
@@ -478,7 +479,11 @@ def download_file(job_id: str, filename: str):
         raise HTTPException(status_code=404, detail="Requested file not found or link expired.")
 
     media_type = "application/vnd.google-earth.kmz" if target.suffix == ".kmz" else "application/vnd.google-earth.kml+xml"
-    return FileResponse(path=target, filename=target.name, media_type=media_type)
+    safe_ascii = re.sub(r'[^a-zA-Z0-9._-]', '_', target.name)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{quote(target.name)}'
+    }
+    return FileResponse(path=target, media_type=media_type, headers=headers)
 
 
 @app.post("/api/utm-zone")
@@ -489,6 +494,20 @@ async def utm_zone_lookup(lat: float = Form(...), lon: float = Form(...)):
     except ValueError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from None
     return JSONResponse({"epsg": f"EPSG:{epsg_code}", "epsg_code": epsg_code, "description": desc})
+
+
+@app.get("/api/sample-file")
+def get_sample_file():
+    """Serve the verified sample drawing (Althur Padu Bund) for quick demo testing."""
+    sample_path = Path(__file__).resolve().parent.parent / "examples" / "Althur_padu_bund.dwg"
+    if not sample_path.is_file():
+        raise HTTPException(status_code=404, detail="Sample drawing file not found on server.")
+    return FileResponse(
+        path=sample_path,
+        media_type="application/acad",
+        filename="Althur_padu_bund.dwg",
+        headers={"Content-Disposition": 'attachment; filename="Althur_padu_bund.dwg"'}
+    )
 
 
 if __name__ == "__main__":

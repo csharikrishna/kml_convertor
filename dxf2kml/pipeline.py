@@ -114,6 +114,7 @@ def convert(
     output_format: Optional[str] = None,
     collect_preview: bool = False,
     preview_max_vertices: int = 250_000,
+    document_name: Optional[str] = None,
 ) -> ConversionResult:
     """
     Convert a DXF or DWG drawing to KML/KMZ.
@@ -172,7 +173,7 @@ def convert(
         exporter = KMLExporter(
             config, transformer, collect_preview=collect_preview,
             preview_max_vertices=preview_max_vertices, deadline=deadline,
-            document_name=input_path.stem,
+            document_name=document_name or input_path.stem,
         )
         exporter.export_geometries(filtered)
         exporter.export_points(parse_result.points)

@@ -84,3 +84,61 @@ def test_mtext_rotation_from_text_direction(new_doc, parse_doc):
     mt = msp.add_mtext("up", dxfattribs={"insert": (0, 0)})
     mt.dxf.text_direction = (0, 1, 0)
     assert parse_doc(doc).labels[0].rotation == pytest.approx(90)
+
+
+def test_text_alignment_anchors(new_doc, parse_doc):
+    """Test that TEXT halign and valign yield correct anchor_x and anchor_y."""
+    doc, msp = new_doc()
+    # Left-baseline
+    msp.add_text("left_base", dxfattribs={"insert": (0, 0), "halign": 0, "valign": 0})
+    # Center-middle
+    msp.add_text("center_mid", dxfattribs={"insert": (10, 10), "align_point": (10, 10), "halign": 1, "valign": 2})
+    # Right-middle
+    msp.add_text("right_mid", dxfattribs={"insert": (20, 20), "align_point": (20, 20), "halign": 2, "valign": 2})
+    # Middle (halign=4)
+    msp.add_text("mid_mid", dxfattribs={"insert": (30, 30), "align_point": (30, 30), "halign": 4, "valign": 0})
+
+    labels = {lbl.text: lbl for lbl in parse_doc(doc).labels}
+    assert labels["left_base"].anchor_x == 0.0
+    assert labels["left_base"].anchor_y == 0.8
+    assert labels["center_mid"].anchor_x == 0.5
+    assert labels["center_mid"].anchor_y == 0.5
+    assert labels["right_mid"].anchor_x == 1.0
+    assert labels["right_mid"].anchor_y == 0.5
+    assert labels["mid_mid"].anchor_x == 0.5
+    assert labels["mid_mid"].anchor_y == 0.5
+
+
+def test_mtext_attachment_point_anchors(new_doc, parse_doc):
+    """Test that MTEXT attachment points (1-9) yield exact anchor_x and anchor_y."""
+    doc, msp = new_doc()
+    # 1=TopLeft, 5=MiddleCenter, 9=BottomRight
+    msp.add_mtext("top_left", dxfattribs={"insert": (0, 0), "attachment_point": 1})
+    msp.add_mtext("mid_center", dxfattribs={"insert": (10, 10), "attachment_point": 5})
+    msp.add_mtext("bot_right", dxfattribs={"insert": (20, 20), "attachment_point": 9})
+
+    labels = {lbl.text: lbl for lbl in parse_doc(doc).labels}
+    assert labels["top_left"].anchor_x == 0.0
+    assert labels["top_left"].anchor_y == 0.0
+    assert labels["mid_center"].anchor_x == 0.5
+    assert labels["mid_center"].anchor_y == 0.5
+    assert labels["bot_right"].anchor_x == 1.0
+    assert labels["bot_right"].anchor_y == 1.0
+
+
+def test_mtext_insertion_point_preserved(new_doc, parse_doc):
+    """Test that MTEXT insertion point is not displaced by width offset."""
+    doc, msp = new_doc()
+    msp.add_mtext("exact_loc", dxfattribs={"insert": (123.45, 678.90, 0.0), "width": 500.0, "attachment_point": 1})
+    lbl = parse_doc(doc).labels[0]
+    assert lbl.position[0] == pytest.approx(123.45)
+    assert lbl.position[1] == pytest.approx(678.90)
+
+
+def test_text_rotation_with_extrusion(new_doc, parse_doc):
+    """Test that mirrored TEXT with extrusion (0, 0, -1) calculates correct WCS rotation."""
+    doc, msp = new_doc()
+    msp.add_text("mirrored", dxfattribs={"insert": (0, 0), "rotation": 45.0, "extrusion": (0, 0, -1)})
+    lbl = parse_doc(doc).labels[0]
+    assert lbl.rotation == pytest.approx(135.0)
+

@@ -274,16 +274,26 @@ class KMLExporter:
         xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
         data = {"Layer": lbl.layer, "Type": lbl.entity_type, "Text": lbl.text,
                 "Height": f"{lbl.height:.2f}", "Scale": f"{style.label_scale:.2f}"}
-        if lbl.rotation:
+        if lbl.rotation is not None:
             data["Rotation"] = f"{lbl.rotation:.1f}°"
         if lbl.font_family:
             data["Font"] = lbl.font_family
         out.write(self._placemark(lbl.text, style, data, xml))
         self._preview_add(
             {"type": "Point", "coordinates": [lon, lat]},
-            {"layer": lbl.layer, "type": "text", "title": lbl.text, "text_height": lbl.height,
-             "rotation": lbl.rotation, "font_family": lbl.font_family,
-             "label_color": rgb_to_css_hex(self._label_color(lbl)[1], default="#00ff00")},
+            {
+                "layer": lbl.layer,
+                "type": "text",
+                "title": lbl.text,
+                "text_height": lbl.height,
+                "rotation": lbl.rotation,
+                "anchor_x": getattr(lbl, "anchor_x", 0.0),
+                "anchor_y": getattr(lbl, "anchor_y", 0.5),
+                "font_family": lbl.font_family,
+                "bold": getattr(lbl, "bold", False),
+                "italic": getattr(lbl, "italic", False),
+                "label_color": rgb_to_css_hex(self._label_color(lbl)[1], default=self._default_css()),
+            },
             1,
         )
 

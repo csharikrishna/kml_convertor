@@ -29,6 +29,10 @@
       <span>CAD2KML Pro</span>
     </a>
     <div class="navbar-links">
+      <button type="button" class="theme-toggle-btn" id="themeToggleBtn" title="Toggle Workstation Theme">
+        <span id="themeToggleIcon">🌙</span>
+        <span id="themeToggleText">Workstation Mode</span>
+      </button>
       <a href="/">Home</a>
       <a href="#converter">Converter</a>
       <a href="/docs">API Docs</a>
@@ -46,7 +50,7 @@
     <!-- Page Header -->
     <div class="page-header">
       <h1>Convert DXF to KML Online (AutoCAD to Google Earth Converter)</h1>
-      <p>If you are working with AutoCAD drawings and want to view them in Google Earth or any mapping tool, convert your DXF files into KML format. DXF is mainly used for CAD design, while KML is used for map visualization. This tool transforms CAD drawings into map-ready Google Earth files.</p>
+      <p>Transform AutoCAD civil survey drawings and boundary designs into map-ready Google Earth KML/KMZ files. Inspect CAD geometries, chainages, and elevations live in an interactive GIS workstation.</p>
     </div>
 
     <!-- Converter Dual Panel Grid -->
@@ -58,7 +62,7 @@
           <h2 class="card-title">AutoCAD DXF to KML</h2>
           <span class="badge-standard">Mapping Standard: WGS84</span>
         </div>
-        <p class="card-subtitle">Project CAD drawings directly into Google Earth with color preservation.</p>
+        <p class="card-subtitle">Project CAD drawings directly into Google Earth with accurate color preservation.</p>
 
         {% if not dwg_supported %}
         <div class="info-banner">
@@ -94,7 +98,7 @@
             </select>
 
             <div class="tip-box">
-              Tip: Click <strong>Select Location on MAP</strong> or <strong>Get My Location</strong> on the right map to auto-detect your UTM zone!
+              Tip: Click <strong>Select Location on MAP</strong> or <strong>Get My Location</strong> on the map dock to auto-detect your UTM zone!
             </div>
           </div>
 
@@ -123,6 +127,15 @@
               <div class="dropzone-title">Click to upload or drag & drop</div>
               <div class="dropzone-sub">Supports AutoCAD .DXF{% if dwg_supported %} and .DWG{% endif %} files (Max {{ max_upload_mb }} MB)</div>
               <input type="file" id="fileInput" name="file" accept="{{ '.dxf,.dwg' if dwg_supported else '.dxf' }}" style="display: none;">
+            </div>
+
+            <!-- Try Sample Drawing Action -->
+            <div class="sample-action-row">
+              <button type="button" class="btn-sample" id="trySampleBtn" title="Load real test survey drawing">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M13 2v7h7"/></svg>
+                <span>Try Sample Drawing (Althur Padu Bund)</span>
+              </button>
+              <div class="sample-caption">No CAD file on hand? Explore the complete workflow with a real 6.8 km survey project.</div>
             </div>
 
             <!-- Uploaded File Card -->
@@ -202,6 +215,46 @@
               <label for="label_scale">Label Text Scale: <span id="scaleVal">0.7</span></label>
               <input type="range" id="label_scale" name="label_scale" min="0.2" max="1.5" step="0.05" value="0.7" class="slider-input">
             </div>
+
+            <div class="checkbox-row" style="margin-top: 0.5rem; align-items: center;">
+              <label for="label_orientation" style="margin-right: 0.5rem; font-size: 0.82rem; white-space: nowrap;">Orientation:</label>
+              <select id="label_orientation" name="label_orientation" class="select-box" style="padding: 0.35rem 0.5rem; font-size: 0.82rem; flex: 1;">
+                <option value="cad" selected>CAD Angle (AutoCAD Slant)</option>
+                <option value="cad_upright">CAD Angle (Keep Upright)</option>
+                <option value="horizontal">Horizontal (Flat)</option>
+              </select>
+            </div>
+
+            <div class="checkbox-row" style="margin-top: 0.5rem;">
+              <input type="checkbox" id="declutter_labels" checked>
+              <label for="declutter_labels">Auto-declutter overlapping labels on zoom out</label>
+            </div>
+          </div>
+
+          <!-- 4-Step Conversion Progress Indicator -->
+          <div class="conversion-progress" id="conversionProgress" style="display: none;">
+            <div class="progress-title">
+              <span>Conversion Progress</span>
+              <span id="progressStepPercent">0%</span>
+            </div>
+            <div class="progress-steps">
+              <div class="step-item" id="step1">
+                <div class="step-indicator">1</div>
+                <div class="step-label">Reading CAD</div>
+              </div>
+              <div class="step-item" id="step2">
+                <div class="step-indicator">2</div>
+                <div class="step-label">Extracting Layers</div>
+              </div>
+              <div class="step-item" id="step3">
+                <div class="step-indicator">3</div>
+                <div class="step-label">Reprojecting UTM</div>
+              </div>
+              <div class="step-item" id="step4">
+                <div class="step-indicator">4</div>
+                <div class="step-label">Rendering Map</div>
+              </div>
+            </div>
           </div>
 
           <!-- Convert Action Button -->
@@ -221,7 +274,7 @@
           <div class="error-sub" id="errorMessage"></div>
         </div>
 
-        <!-- Warnings (conversion succeeded but something needs attention) -->
+        <!-- Warnings -->
         <div class="warning-banner" id="warningBanner">
           <strong>Please review</strong>
           <ul id="warningList"></ul>
@@ -244,28 +297,141 @@
 
       </div>
 
-      <!-- Right Panel: Interactive Satellite Map -->
-      <div class="map-card">
-        <div class="map-header-bar">
-          <div class="map-search-box">
-            <input type="text" id="mapSearchInput" class="map-search-input" placeholder="Search location (e.g. Kurnool, Hyderabad, London)...">
-            <button type="button" class="map-search-btn" id="mapSearchBtn">Search</button>
+      <!-- Right Panel: GIS Workstation Map Area -->
+      <div class="map-column">
+
+        <!-- CAD Drawing Statistics Ribbon (appears once drawing is converted) -->
+        <div class="stats-ribbon" id="statsRibbon" style="display: none;">
+          <div class="stat-pill">
+            <span class="stat-icon">📐</span>
+            <span class="stat-val" id="statEntities">0</span>
+            <span class="stat-lbl">Entities</span>
           </div>
-          <button type="button" class="btn-location" id="myLocationBtn">
-            📍 Get My Location
-          </button>
+          <div class="stat-pill">
+            <span class="stat-icon">📏</span>
+            <span class="stat-val" id="statLength">0 km</span>
+            <span class="stat-lbl">Length</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-icon">🏷️</span>
+            <span class="stat-val" id="statLabels">0</span>
+            <span class="stat-lbl">Labels</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-icon">📍</span>
+            <span class="stat-val" id="statPoints">0</span>
+            <span class="stat-lbl">Points</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-icon">🌐</span>
+            <span class="stat-val" id="statCrs">UTM 44N</span>
+            <span class="stat-lbl">CRS</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-icon">📦</span>
+            <span class="stat-val" id="statFormat">KML</span>
+            <span class="stat-lbl">Format</span>
+          </div>
         </div>
 
-        <div id="map"></div>
+        <!-- Map Card Container -->
+        <div class="map-card" id="mapCard">
 
-        <!-- Layer control panel (populated after conversion) -->
-        <div class="layer-panel" id="layerPanel" style="display:none;">
-          <div class="layer-panel-header">
-            <span>📂 Layers</span>
-            <button type="button" class="layer-panel-toggle" id="layerPanelToggle">−</button>
+          <!-- Floating Frosted Glass Dock -->
+          <div class="floating-glass-dock" id="glassDock">
+            <div class="glass-search-box">
+              <input type="text" id="mapSearchInput" class="glass-search-input" placeholder="Search location (e.g. Kurnool, Hyderabad, London)...">
+              <button type="button" class="glass-search-btn" id="mapSearchBtn">Search</button>
+            </div>
+
+            <div class="glass-dock-actions">
+              <!-- Fit Bounds -->
+              <button type="button" class="glass-dock-btn" id="fitBoundsBtn" title="Fit to Drawing Extents">
+                <span>⛶</span>
+                <span>Fit Drawing</span>
+              </button>
+
+              <!-- Measurement Tool -->
+              <button type="button" class="glass-dock-btn" id="measureBtn" title="Measure Distance & Area">
+                <span>📏</span>
+                <span>Measure</span>
+              </button>
+
+              <!-- Fullscreen Mode Toggle -->
+              <button type="button" class="glass-dock-btn" id="fullscreenBtn" title="Toggle Fullscreen Map Workstation">
+                <span id="fullscreenIcon">🗖</span>
+                <span id="fullscreenText">Fullscreen</span>
+              </button>
+
+              <!-- My Location -->
+              <button type="button" class="glass-dock-btn" id="myLocationBtn" title="Detect Current GPS Location">
+                <span>📍</span>
+                <span>My Location</span>
+              </button>
+            </div>
           </div>
-          <div class="layer-panel-body" id="layerPanelBody"></div>
+
+          <!-- Active Measurement Floating Banner -->
+          <div class="measure-banner" id="measureBanner">
+            <span>📏 Distance: <strong id="measureDistanceVal">0.0 m</strong></span>
+            <button type="button" class="btn-measure-action" id="measureClearBtn">Clear</button>
+            <button type="button" class="btn-measure-action" id="measureFinishBtn">Finish</button>
+          </div>
+
+          <!-- Feature Inspector Hover Card -->
+          <div class="feature-inspector-card" id="featureInspectorCard">
+            <div class="inspector-title">
+              <span id="inspectorIcon">📐</span>
+              <span id="inspectorLayer">Layer: BUND</span>
+            </div>
+            <div class="inspector-row">
+              <span>Type:</span>
+              <span class="val" id="inspectorType">Polyline</span>
+            </div>
+            <div class="inspector-row" id="inspectorLengthRow">
+              <span>Length:</span>
+              <span class="val" id="inspectorLength">0 m</span>
+            </div>
+            <div class="inspector-row" id="inspectorAreaRow" style="display:none;">
+              <span>Area:</span>
+              <span class="val" id="inspectorArea">0 m²</span>
+            </div>
+            <div class="inspector-row">
+              <span>Vertices:</span>
+              <span class="val" id="inspectorVertices">0</span>
+            </div>
+          </div>
+
+          <!-- Main Leaflet Map Viewport -->
+          <div id="map"></div>
+
+          <!-- Enhanced Layer Management Panel -->
+          <div class="layer-panel" id="layerPanel" style="display:none;">
+            <div class="layer-panel-header">
+              <span>📂 Drawing Layers</span>
+              <div class="layer-quick-actions">
+                <button type="button" class="layer-quick-btn" id="layerAllOnBtn" title="Show all layers">All</button>
+                <button type="button" class="layer-quick-btn" id="layerAllOffBtn" title="Hide all layers">None</button>
+                <button type="button" class="layer-panel-toggle" id="layerPanelToggle" title="Toggle panel">−</button>
+              </div>
+            </div>
+            <div class="layer-panel-body" id="layerPanelBody"></div>
+          </div>
+
+          <!-- Live Coordinate Status Bar -->
+          <div class="map-status-bar" id="mapStatusBar">
+            <div class="map-status-left">
+              <span>Coordinates: <span class="map-status-val" id="statusCoords">--</span></span>
+              <span>UTM: <span class="map-status-val" id="statusUtm">--</span></span>
+            </div>
+            <div class="map-status-right">
+              <span>Zoom: <span class="map-status-val" id="statusZoom">--</span></span>
+              <span>CRS: <span class="map-status-val" id="statusCrs">EPSG:32644</span></span>
+            </div>
+          </div>
+
         </div>
+
       </div>
 
     </div>
@@ -275,7 +441,7 @@
   <footer class="site-footer">
     <div class="footer-inner">
       <div class="footer-brand">
-        <strong>CAD2KML Pro</strong> — Free DXF to KML Converter
+        <strong>CAD2KML Pro</strong> — Free DXF to KML Converter & GIS Workstation
       </div>
       <div class="footer-links">
         <a href="/docs">API Documentation</a>
