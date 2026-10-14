@@ -382,12 +382,13 @@
     });
 
     function initMap() {
-      map = L.map('shareMap', { zoomControl: false, attributionControl: true }).setView([14.055, 79.526], 14);
+      map = L.map('shareMap', { zoomControl: false, attributionControl: true, maxZoom: 22 }).setView([14.055, 79.526], 14);
       L.control.zoom({ position: 'topleft' }).addTo(map);
 
-      // High-res Esri World Imagery Basemap
+      // High-res Esri World Imagery Basemap (maxNativeZoom: 18 auto-magnifies deep zoom levels seamlessly)
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19,
+        maxNativeZoom: 18,
+        maxZoom: 22,
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
       }).addTo(map);
 

@@ -218,7 +218,8 @@ function setupControls() {
 function initMap() {
   map = L.map('map', {
     zoomControl: false,
-    attributionControl: true
+    attributionControl: true,
+    maxZoom: 22
   }).setView([15.8281, 78.0373], 11);
 
   L.control.zoom({ position: 'topleft' }).addTo(map);
@@ -227,7 +228,8 @@ function initMap() {
   L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     {
-      maxZoom: 19,
+      maxNativeZoom: 18,
+      maxZoom: 22,
       attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
     }
   ).addTo(map);
@@ -236,7 +238,8 @@ function initMap() {
   L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
     {
-      maxZoom: 19,
+      maxNativeZoom: 18,
+      maxZoom: 22,
       attribution: 'Esri'
     }
   ).addTo(map);
