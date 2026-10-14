@@ -143,9 +143,15 @@ class StyleManager:
         return self._get(("point", kml_color, scale, url), icon_href=url, icon_scale=scale, icon_color=kml_color)
 
     def get_label_style(self, kml_color: str, label_scale: Optional[float] = None) -> KMLStyle:
-        """Text label: invisible icon, colored label."""
+        """Text label: invisible transparent icon, colored label."""
         scale = self.config.default_label_scale if label_scale is None else label_scale
-        return self._get(("label", kml_color, scale), icon_scale=0.0, label_color=kml_color, label_scale=scale)
+        return self._get(
+            ("label", kml_color, scale),
+            icon_href="http://maps.google.com/mapfiles/kml/paddle/trans.png",
+            icon_scale=0.0,
+            label_color=kml_color,
+            label_scale=scale,
+        )
 
     def get_vector_label_style(self, kml_color: str) -> KMLStyle:
         """Vector ground text style: filled polygon characters, zero icon and zero screen label."""
@@ -156,6 +162,7 @@ class StyleManager:
             poly_color=kml_color,
             poly_fill=True,
             poly_outline=True,
+            icon_href="http://maps.google.com/mapfiles/kml/paddle/trans.png",
             icon_scale=0.0,
             label_scale=0.0,
         )

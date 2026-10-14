@@ -328,8 +328,11 @@ class KMLExporter:
                             f"</Polygon>"
                         )
                 if poly_xmls:
-                    point_xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
-                    geom_xml = f"<MultiGeometry>{''.join(poly_xmls)}{point_xml}</MultiGeometry>"
+                    geom_xml = (
+                        f"<MultiGeometry>{''.join(poly_xmls)}</MultiGeometry>"
+                        if len(poly_xmls) > 1
+                        else poly_xmls[0]
+                    )
                     out.write(self._placemark(lbl.text, vector_style, data, geom_xml))
                 else:
                     xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
@@ -373,7 +376,11 @@ class KMLExporter:
         for pt in self._points:
             add(pt.layer, "point", pt, self._point_style(pt))
         for lbl in self._labels:
-            add(lbl.layer, "label", lbl, self._label_style(lbl))
+            if self.config.export_vector_text and lbl.height > 0:
+                vector_style = self.style_manager.get_vector_label_style(self._label_color(lbl)[0])
+                add(lbl.layer, "label", lbl, vector_style)
+            else:
+                add(lbl.layer, "label", lbl, self._label_style(lbl))
 
         out.write(KML_HEADER)
         out.write(f"<name>{xml_text(self.document_name)}</name>\n")
