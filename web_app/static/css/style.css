@@ -839,7 +839,7 @@ main.container {
   border: 1px solid var(--border-color);
   height: 720px;
   background: #0f172a;
-  transition: all 0.3s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 /* Fullscreen Map Mode */
@@ -1214,23 +1214,24 @@ main.container {
 
 .cad-label-text {
   display: inline-block;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 0;
+  margin: 0;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-weight: 700;
   white-space: pre;
-  line-height: 1.15;
-  letter-spacing: 0.25px;
-  background: rgba(15, 23, 42, 0.40);
-  backdrop-filter: blur(2px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  line-height: 1.1;
+  letter-spacing: 0.3px;
+  /* Clean, crisp 1px contrast outline without blurry shadow boxes */
   text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.95),
-     1px -1px 0 rgba(0, 0, 0, 0.95),
-    -1px  1px 0 rgba(0, 0, 0, 0.95),
-     1px  1px 0 rgba(0, 0, 0, 0.95),
-     0 0 5px rgba(0, 0, 0, 0.95);
+    -1px -1px 0 #000000,
+     1px -1px 0 #000000,
+    -1px  1px 0 #000000,
+     1px  1px 0 #000000;
+  -webkit-text-stroke: 0.35px #000000;
   transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), font-size 0.15s ease-out;
   user-select: none;
 }

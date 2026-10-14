@@ -68,6 +68,9 @@ function setTheme(mode) {
     icon.innerText = isDark ? '☀️' : '🌙';
     text.innerText = isDark ? 'Light Mode' : 'Workstation Mode';
   }
+  if (typeof map !== 'undefined' && map) {
+    setTimeout(() => map.invalidateSize(), 50);
+  }
 }
 
 // Escape drawing-supplied text (layer names, TEXT/MTEXT content) before it is used as HTML.
@@ -197,7 +200,6 @@ function setupControls() {
       searchLocation();
     }
   });
-  document.getElementById('myLocationBtn').addEventListener('click', getUserLocation);
   document.getElementById('layerPanelToggle').addEventListener('click', toggleLayerPanel);
 
   const opacity = document.getElementById('fill_opacity');
@@ -240,6 +242,29 @@ function initMap() {
   ).addTo(map);
 
   geojsonLayerGroup = L.layerGroup().addTo(map);
+
+  // Automatic container resize detection to guarantee complete tile grid coverage
+  if (window.ResizeObserver) {
+    const mapCardEl = document.getElementById('mapCard');
+    const mapEl = document.getElementById('map');
+    const ro = new ResizeObserver(() => {
+      if (map) {
+        map.invalidateSize({ debounceMoveEngine: true });
+      }
+    });
+    if (mapEl) ro.observe(mapEl);
+    if (mapCardEl && mapCardEl !== mapEl) ro.observe(mapCardEl);
+  }
+  window.addEventListener('resize', () => {
+    if (map) map.invalidateSize();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (map) {
+      map.invalidateSize();
+      setTimeout(() => map.invalidateSize(), 100);
+      setTimeout(() => map.invalidateSize(), 300);
+    }
+  });
 
   // Dynamic zoom-adaptive label sizing and decluttering
   map.on('zoomend', () => {
@@ -387,9 +412,14 @@ function toggleFullscreen() {
     text.innerText = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen';
   }
 
-  setTimeout(() => {
+  // Multi-pass invalidation to guarantee full tile grid coverage
+  if (map) {
     map.invalidateSize();
-  }, 200);
+    requestAnimationFrame(() => map.invalidateSize());
+    setTimeout(() => map.invalidateSize(), 50);
+    setTimeout(() => map.invalidateSize(), 150);
+    setTimeout(() => map.invalidateSize(), 300);
+  }
 }
 
 // ==========================================
@@ -1315,6 +1345,10 @@ function renderGeoJSONPreview(geojson, shouldFitBounds = false) {
   });
 
   geojsonLayerGroup.addLayer(geojsonLayer);
+
+  if (map) {
+    map.invalidateSize();
+  }
 
   const bounds = geojsonLayer.getBounds();
   if (shouldFitBounds && bounds.isValid()) {

@@ -155,12 +155,6 @@
           <span id="fullscreenIcon">🗖</span>
           <span id="fullscreenText">Fullscreen</span>
         </button>
-
-        <!-- My Location -->
-        <button type="button" class="glass-dock-btn" id="myLocationBtn" title="Detect Current GPS Location">
-          <span>📍</span>
-          <span>My Location</span>
-        </button>
       </div>
     </div>
 
@@ -252,6 +246,25 @@
       }).addTo(map);
 
       geojsonLayerGroup = L.featureGroup().addTo(map);
+
+      // Automatic container resize detection to guarantee complete tile coverage
+      if (window.ResizeObserver) {
+        const shareMapEl = document.getElementById('shareMap');
+        const ro = new ResizeObserver(() => {
+          if (map) map.invalidateSize({ debounceMoveEngine: true });
+        });
+        if (shareMapEl) ro.observe(shareMapEl);
+      }
+      window.addEventListener('resize', () => {
+        if (map) map.invalidateSize();
+      });
+      document.addEventListener('fullscreenchange', () => {
+        if (map) {
+          map.invalidateSize();
+          setTimeout(() => map.invalidateSize(), 100);
+          setTimeout(() => map.invalidateSize(), 300);
+        }
+      });
 
       map.on('mousemove', onMapMouseMove);
       map.on('zoomend', () => {
@@ -415,6 +428,7 @@
         }
       });
 
+      if (map) map.invalidateSize();
       geojsonLayerGroup.addLayer(layer);
       if (shouldFit && geojsonLayerGroup.getLayers().length > 0) {
         map.fitBounds(geojsonLayerGroup.getBounds(), { padding: [40, 40], maxZoom: 18 });
@@ -573,7 +587,6 @@
       document.getElementById('measureBtn')?.addEventListener('click', toggleMeasurement);
       document.getElementById('measureClearBtn')?.addEventListener('click', clearMeasurement);
       document.getElementById('measureFinishBtn')?.addEventListener('click', toggleMeasurement);
-      document.getElementById('myLocationBtn')?.addEventListener('click', locateUser);
       document.getElementById('fullscreenBtn')?.addEventListener('click', toggleFullscreen);
 
       // Search box
@@ -648,22 +661,17 @@
       if (valEl) valEl.innerText = '0.0 m';
     }
 
-    function locateUser() {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          map.flyTo([pos.coords.latitude, pos.coords.longitude], 16);
-          L.circleMarker([pos.coords.latitude, pos.coords.longitude], { radius: 7, color: '#3b82f6', fillColor: '#60a5fa', fillOpacity: 0.9 }).addTo(map);
-        },
-        err => console.warn(err)
-      );
-    }
-
     function toggleFullscreen() {
       if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen();
+        document.documentElement.requestFullscreen().catch(() => {});
       } else {
-        document.exitFullscreen();
+        document.exitFullscreen().catch(() => {});
+      }
+      if (map) {
+        map.invalidateSize();
+        requestAnimationFrame(() => map.invalidateSize());
+        setTimeout(() => map.invalidateSize(), 100);
+        setTimeout(() => map.invalidateSize(), 300);
       }
     }
 
