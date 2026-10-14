@@ -890,6 +890,28 @@
         }
         geojson.features.forEach(f => {
           if (f.geometry?.coordinates) extractCoords(f.geometry.coordinates);
+
+          if (f.properties?.type === 'text' && f.properties?.title && f.geometry?.coordinates) {
+            const title = f.properties.title;
+            const c = f.geometry.coordinates;
+            const h = Number(f.properties.text_height) || 12;
+            const approxWidthMeters = Math.max(30, title.length * h * 0.75);
+            const dLat = (h * 1.8) / 111000;
+            const latRad = ((c[1] || 0) * Math.PI) / 180;
+            const dLng = approxWidthMeters / (111000 * Math.max(0.1, Math.cos(latRad)));
+            const ax = Number(f.properties?.anchor_x ?? 0.0);
+
+            if (ax >= 0.7) {
+              allCoords.push([c[0] - dLng, c[1]]);
+            } else if (ax >= 0.3) {
+              allCoords.push([c[0] - dLng / 2, c[1]]);
+              allCoords.push([c[0] + dLng / 2, c[1]]);
+            } else {
+              allCoords.push([c[0] + dLng, c[1]]);
+            }
+            allCoords.push([c[0], c[1] + dLat]);
+            allCoords.push([c[0], c[1] - dLat]);
+          }
         });
 
         if (allCoords.length === 0) {
@@ -1098,8 +1120,8 @@
 
           const rotation = Number(f.properties?.rotation) || 0;
           const labelColor = f.properties?.label_color || '#ff0000';
-          const isLargeTitle = title.length > 10 && !title.startsWith('KM');
-          const fontSize = isLargeTitle ? 13 : 10.5;
+          const isLargeTitle = (title.length > 8 && !title.startsWith('KM')) || title.includes('RESERVOIR');
+          const fontSize = isLargeTitle ? 14 : 10.5;
 
           ctx.save();
           ctx.translate(sx, sy);
@@ -1109,13 +1131,31 @@
             ctx.rotate((cssAngle * Math.PI) / 180);
           }
 
-          ctx.font = `600 ${fontSize}px "JetBrains Mono", "Inter", sans-serif`;
-          ctx.textBaseline = 'middle';
-          ctx.textAlign = 'left';
+          ctx.font = isLargeTitle
+            ? `700 ${fontSize}px "JetBrains Mono", "Inter", sans-serif`
+            : `600 ${fontSize}px "JetBrains Mono", "Inter", sans-serif`;
 
-          // 2.2px dark halo for razor-sharp legibility against satellite imagery
+          const anchorX = Number(f.properties?.anchor_x ?? 0.0);
+          if (anchorX >= 0.7) {
+            ctx.textAlign = 'right';
+          } else if (anchorX >= 0.3) {
+            ctx.textAlign = 'center';
+          } else {
+            ctx.textAlign = 'left';
+          }
+
+          const anchorY = Number(f.properties?.anchor_y ?? 0.5);
+          if (anchorY >= 0.7) {
+            ctx.textBaseline = 'top';
+          } else if (anchorY <= 0.3) {
+            ctx.textBaseline = 'bottom';
+          } else {
+            ctx.textBaseline = 'middle';
+          }
+
+          // Dark halo for crisp contrast
           ctx.strokeStyle = '#000000';
-          ctx.lineWidth = 2.4;
+          ctx.lineWidth = isLargeTitle ? 3.4 : 2.4;
           ctx.lineJoin = 'miter';
           ctx.miterLimit = 2;
           ctx.strokeText(title, 0, 0);

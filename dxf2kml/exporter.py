@@ -20,6 +20,7 @@ KML semantics:
 import io
 import math
 import os
+import re
 import time
 import zipfile
 from dataclasses import dataclass
@@ -42,6 +43,31 @@ from dxf2kml.utils import aci_to_rgb, rgb_to_css_hex, xml_attr, xml_text
 _DEADLINE_CHECK_INTERVAL = 256
 KML_HEADER = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n'
 KML_FOOTER = "</Document>\n</kml>\n"
+
+
+def get_label_tier(text: str, text_height: float, median_height: float) -> int:
+    """Classify label hierarchy for Google Earth Level-of-Detail (LOD) auto-decluttering.
+
+    Tier 0: Main drawing titles / project annotations (always visible at any zoom)
+    Tier 1: Whole kilometer milestones (KM 1.000, KM 2.000, etc.)
+    Tier 2: 500m intervals (KM 0.500, KM 1.500, etc.)
+    Tier 3: Detailed 100m chainage and minor stations
+    """
+    txt = (text or "").strip()
+    h = float(text_height) if text_height else 0.0
+    med = float(median_height) if median_height else 10.0
+
+    # Tier 0: Major drawing titles, large text annotations (h >= 1.35 * median), or non-chainage words
+    if h >= med * 1.35 or (not re.match(r"^KM\b", txt, re.I) and not re.match(r"^\d+(\.\d+)?$", txt) and len(txt) > 8):
+        return 0
+    # Tier 1: Whole Kilometer Milestones (e.g., KM 1.000, KM 2.000, KM 1, KM 2)
+    if re.match(r"^KM\s*\d+(\.000?)?$", txt, re.I) or txt.endswith(".000"):
+        return 1
+    # Tier 2: 500m Intervals (e.g., KM 0.500, KM 1.500, KM 2.500)
+    if re.match(r"^KM\s*\d+\.[50]00?$", txt, re.I) or txt.endswith(".500"):
+        return 2
+    # Tier 3: Detailed 100m chainage and all minor stations
+    return 3
 
 
 @dataclass
@@ -139,17 +165,30 @@ class KMLExporter:
                 self._cached_ref_height = self.config.reference_text_height
         return self._cached_ref_height
 
-    def _calculate_label_scale(self, text_height: float) -> float:
-        """Dynamically scale label relative to drawing's typical text height."""
+    def _calculate_label_scale(self, text_height: float, tier: int = 2) -> float:
+        """Dynamically scale label relative to drawing's typical text height and hierarchy."""
+        base = self.config.default_label_scale
         if not self.config.auto_scale_text or text_height <= 0:
-            return self.config.default_label_scale
-        ref = self._effective_reference_height()
-        if ref <= 0:
-            return self.config.default_label_scale
-        ratio = text_height / ref
-        mult = math.sqrt(ratio) if ratio > 0 else 1.0
-        relative = self.config.default_label_scale * mult
-        return round(max(0.95, min(3.5, relative)), 3)
+            scale = base
+        else:
+            ref = self._effective_reference_height()
+            if ref <= 0:
+                scale = base
+            else:
+                ratio = text_height / ref
+                mult = math.sqrt(ratio) if ratio > 0 else 1.0
+                scale = base * mult
+
+        if tier == 0:
+            tier_mult = 1.25
+        elif tier == 1:
+            tier_mult = 1.05
+        elif tier == 2:
+            tier_mult = 0.92
+        else:
+            tier_mult = 0.82
+
+        return round(max(0.70, min(3.5, scale * tier_mult)), 3)
 
     @staticmethod
     def _resolved_rgb(aci: Optional[int], rgb: Optional[Tuple[int, int, int]]) -> Optional[Tuple[int, int, int]]:
@@ -212,8 +251,10 @@ class KMLExporter:
         return (self.style_manager.get_color_kml(aci_color=lbl.color_aci, rgb_color=lbl.rgb_color),
                 self._resolved_rgb(lbl.color_aci, lbl.rgb_color))
 
-    def _label_style(self, lbl: LabelData) -> KMLStyle:
-        return self.style_manager.get_label_style(self._label_color(lbl)[0], self._calculate_label_scale(lbl.height))
+    def _label_style(self, lbl: LabelData, tier: int = 2) -> KMLStyle:
+        return self.style_manager.get_label_style(
+            self._label_color(lbl)[0], self._calculate_label_scale(lbl.height, tier=tier)
+        )
 
     # ------------------------------------------------------------------ feature writers
 
@@ -382,17 +423,19 @@ class KMLExporter:
         for pt in self._points:
             add(pt.layer, "point", pt, self._point_style(pt))
         text_mode = getattr(self.config, "kml_text_mode", "screen")
+        ref_h = self._effective_reference_height()
         for lbl in self._labels:
+            tier = get_label_tier(lbl.text, lbl.height, ref_h)
             if text_mode == "vector" and lbl.height > 0:
                 vector_style = self.style_manager.get_vector_label_style(self._label_color(lbl)[0])
                 add(lbl.layer, "label", lbl, vector_style)
             elif text_mode == "both" and lbl.height > 0:
                 both_style = self.style_manager.get_hybrid_label_style(
-                    self._label_color(lbl)[0], self._calculate_label_scale(lbl.height)
+                    self._label_color(lbl)[0], self._calculate_label_scale(lbl.height, tier=tier)
                 )
                 add(lbl.layer, "label", lbl, both_style)
             else:
-                add(lbl.layer, "label", lbl, self._label_style(lbl))
+                add(lbl.layer, "label", lbl, self._label_style(lbl, tier=tier))
 
         out.write(KML_HEADER)
         out.write(f"<name>{xml_text(self.document_name)}</name>\n")
@@ -404,9 +447,76 @@ class KMLExporter:
         }
         for layer, features in layers.items():
             out.write(f"<Folder><name>{xml_text(layer)}</name>\n")
-            for kind, obj, style in features:
+            non_labels = [f for f in features if f[0] != "label"]
+            labels = [f for f in features if f[0] == "label"]
+
+            for kind, obj, style in non_labels:
                 self._tick()
                 writers[kind](out, obj, style)
+
+            if labels:
+                t0 = [f for f in labels if get_label_tier(f[1].text, f[1].height, ref_h) == 0]
+                t1 = [f for f in labels if get_label_tier(f[1].text, f[1].height, ref_h) == 1]
+                t2 = [f for f in labels if get_label_tier(f[1].text, f[1].height, ref_h) == 2]
+                t3 = [f for f in labels if get_label_tier(f[1].text, f[1].height, ref_h) == 3]
+
+                if len(t3) > 0 and (len(t0) > 0 or len(t1) > 0 or len(t2) > 0):
+                    # Multi-tier LOD folders for auto-decluttering in Google Earth
+                    lbl_coords = [self.transformer.transform_point(*f[1].position) for f in labels]
+                    min_lon = min(c[0] for c in lbl_coords) - 0.005
+                    max_lon = max(c[0] for c in lbl_coords) + 0.005
+                    min_lat = min(c[1] for c in lbl_coords) - 0.005
+                    max_lat = max(c[1] for c in lbl_coords) + 0.005
+
+                    def region_xml(min_pixels: int) -> str:
+                        return (
+                            f"<Region><LatLonAltBox>"
+                            f"<north>{max_lat:.9f}</north><south>{min_lat:.9f}</south>"
+                            f"<east>{max_lon:.9f}</east><west>{min_lon:.9f}</west>"
+                            f"</LatLonAltBox>"
+                            f"<Lod><minLodPixels>{min_pixels}</minLodPixels><maxLodPixels>-1</maxLodPixels></Lod>"
+                            f"</Region>\n"
+                        )
+
+                    # Tier 0: Titles & Project Names (Always visible, no minLodPixels restriction)
+                    if t0:
+                        out.write(f"<Folder><name>Project Title &amp; Major Annotations</name>\n")
+                        for kind, obj, style in t0:
+                            self._tick()
+                            writers[kind](out, obj, style)
+                        out.write("</Folder>\n")
+
+                    # Tier 1: 1km Milestones (visible from high altitude, e.g. minLodPixels 64)
+                    if t1:
+                        out.write(f"<Folder><name>Milestones - 1km</name>\n")
+                        out.write(region_xml(64))
+                        for kind, obj, style in t1:
+                            self._tick()
+                            writers[kind](out, obj, style)
+                        out.write("</Folder>\n")
+
+                    # Tier 2: 500m Intervals (visible at medium zoom, minLodPixels 200)
+                    if t2:
+                        out.write(f"<Folder><name>Milestones - 500m Intervals</name>\n")
+                        out.write(region_xml(200))
+                        for kind, obj, style in t2:
+                            self._tick()
+                            writers[kind](out, obj, style)
+                        out.write("</Folder>\n")
+
+                    # Tier 3: Detailed 100m Chainage (visible when zoomed in, minLodPixels 520)
+                    if t3:
+                        out.write(f"<Folder><name>Detailed Chainage (100m)</name>\n")
+                        out.write(region_xml(520))
+                        for kind, obj, style in t3:
+                            self._tick()
+                            writers[kind](out, obj, style)
+                        out.write("</Folder>\n")
+                else:
+                    for kind, obj, style in labels:
+                        self._tick()
+                        writers[kind](out, obj, style)
+
             out.write("</Folder>\n")
         out.write(KML_FOOTER)
 

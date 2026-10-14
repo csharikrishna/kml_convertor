@@ -294,14 +294,18 @@
           <div class="success-sub" id="successSummary">
             Successfully projected shapes and markers into Google Earth format.
           </div>
-          <div class="result-action-group" style="display:flex; gap:0.5rem; margin-top:0.75rem;">
-            <a href="#" id="downloadBtn" class="btn-download" style="flex:1;">
-              <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <div class="result-action-group" style="display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap;">
+            <a href="#" id="downloadBtn" class="btn-download" style="flex:1; min-width:130px;">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               Download KML
             </a>
+            <button type="button" id="bannerExportPdfBtn" class="btn-pdf-banner" style="flex:1; min-width:130px;" title="Preview and save or print high-DPI map PDF">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              Export PDF
+            </button>
             <button type="button" id="shareBtn" class="btn-share" title="Share with temporary link">
               <span>🔗</span>
-              <span>Share Link</span>
+              <span>Share</span>
             </button>
           </div>
         </div>
@@ -593,6 +597,161 @@
           <div class="share-expiry-notice" id="shareExpiryNotice"></div>
           <div style="margin-top:0.75rem; text-align:right;">
             <a href="#" id="openShareUrlLink" target="_blank" class="share-open-link">Open Shared View ↗</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF & Print Export Preview Modal -->
+  <div class="modal-backdrop" id="pdfExportModal" style="display:none;">
+    <div class="modal-card modal-card-pdf-preview">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <span>Map Print &amp; PDF Export Preview</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="pdfExportModalClose" title="Close Preview">&times;</button>
+      </div>
+
+      <div class="pdf-modal-layout">
+        <!-- Controls Column -->
+        <div class="pdf-controls-sidebar">
+          <!-- Orientation Selector -->
+          <div class="pdf-control-group">
+            <label class="pdf-control-label">Page Orientation</label>
+            <div class="pdf-orientation-pills">
+              <button type="button" class="pdf-pill-btn active" id="pdfOrientLandscape" data-orient="landscape">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                </svg>
+                <span>Landscape (A4)</span>
+              </button>
+              <button type="button" class="pdf-pill-btn" id="pdfOrientPortrait" data-orient="portrait">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="5" y="2" width="14" height="20" rx="2"></rect>
+                </svg>
+                <span>Portrait (A4)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Coverage / Zoom Slider -->
+          <div class="pdf-control-group">
+            <div class="pdf-slider-header">
+              <label class="pdf-control-label" for="pdfZoomSlider">Zoom &amp; Margin Coverage</label>
+              <span class="pdf-slider-badge" id="pdfZoomVal">100%</span>
+            </div>
+            <div class="pdf-slider-row">
+              <button type="button" class="pdf-step-btn" id="pdfZoomMinus" title="Zoom In (tighter margin)">−</button>
+              <input type="range" id="pdfZoomSlider" min="70" max="150" value="100" step="5" class="pdf-range-input">
+              <button type="button" class="pdf-step-btn" id="pdfZoomPlus" title="Zoom Out (wider margin)">+</button>
+              <button type="button" class="pdf-reset-btn" id="pdfZoomReset" title="Reset to 100%">Reset</button>
+            </div>
+            <div class="pdf-control-hint">Adjust margin padding around the boundary and title.</div>
+          </div>
+
+          <!-- Basemap Imagery Selector -->
+          <div class="pdf-control-group">
+            <label class="pdf-control-label" for="pdfBasemapSelect">Basemap Imagery</label>
+            <select id="pdfBasemapSelect" class="pdf-select-box">
+              <option value="google_hybrid" selected>🛰️ Google Satellite (Hybrid)</option>
+              <option value="esri_world">🌍 Esri World Imagery</option>
+              <option value="osm_streets">🗺️ OpenStreetMap (Streets)</option>
+            </select>
+          </div>
+
+          <!-- Layers Checklist -->
+          <div class="pdf-control-group">
+            <label class="pdf-control-label">Visible Elements</label>
+            <div class="pdf-checks-grid">
+              <label class="pdf-check-item">
+                <input type="checkbox" id="pdfCheckPolygons" checked>
+                <span>Polygons &amp; Vectors</span>
+              </label>
+              <label class="pdf-check-item">
+                <input type="checkbox" id="pdfCheckPoints" checked>
+                <span>Survey Points</span>
+              </label>
+              <label class="pdf-check-item">
+                <input type="checkbox" id="pdfCheckLabels" checked>
+                <span>Labels &amp; Title</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Quality Badge -->
+          <div class="pdf-spec-card">
+            <div class="pdf-spec-row">
+              <span>Standard:</span>
+              <strong id="pdfSpecSize">ISO A4 (297×210 mm)</strong>
+            </div>
+            <div class="pdf-spec-row">
+              <span>Resolution:</span>
+              <strong>High-DPI (300 DPI Vector)</strong>
+            </div>
+            <div class="pdf-spec-row">
+              <span>Title &amp; Points:</span>
+              <strong>Zero Elements Clipped</strong>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="pdf-actions-footer">
+            <button type="button" class="btn-primary pdf-btn-download" id="pdfConfirmDownloadBtn">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+              </svg>
+              <span id="pdfConfirmDownloadText">Download PDF</span>
+            </button>
+            <button type="button" class="btn-secondary pdf-btn-print" id="pdfDirectPrintBtn">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              <span>Print Sheet</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Stage Column: Realistic Paper Sheet Mockup -->
+        <div class="pdf-preview-stage">
+          <div class="pdf-sheet-frame landscape" id="pdfSheetFrame">
+            <!-- Sheet Header Banner -->
+            <div class="pdf-sheet-header">
+              <div class="pdf-sheet-title-block">
+                <div class="pdf-sheet-doc-name" id="pdfSheetDocName">CAD Drawing Map</div>
+                <div class="pdf-sheet-meta" id="pdfSheetMeta">High-DPI Engineering Print Sheet</div>
+              </div>
+              <div class="pdf-sheet-stamp">
+                <span class="pdf-stamp-badge" id="pdfSheetBadge">A4 LANDSCAPE</span>
+              </div>
+            </div>
+
+            <!-- Sheet Canvas Viewport -->
+            <div class="pdf-canvas-container" id="pdfCanvasContainer">
+              <canvas id="pdfPreviewCanvas" class="pdf-preview-canvas"></canvas>
+              <div class="pdf-canvas-loading" id="pdfCanvasLoading" style="display:none;">
+                <div class="pdf-loading-spinner"></div>
+                <div class="pdf-loading-text" id="pdfLoadingText">Rendering Sheet Preview...</div>
+              </div>
+            </div>
+
+            <!-- Sheet Footer -->
+            <div class="pdf-sheet-footer">
+              <div class="pdf-sheet-legend">
+                <span class="legend-dot poly"></span> Boundary
+                <span class="legend-dot pt"></span> Survey Points
+                <span class="legend-dot km"></span> Chainage
+              </div>
+              <div class="pdf-sheet-crs" id="pdfSheetCrs">Datum: WGS84 • UTM 44N</div>
+            </div>
           </div>
         </div>
       </div>
