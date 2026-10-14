@@ -220,8 +220,8 @@ function setupControls() {
     removeSelectedFile();
   });
   document.getElementById('accordionToggle').addEventListener('click', toggleAccordion);
-  document.getElementById('mapSearchBtn').addEventListener('click', searchLocation);
-  document.getElementById('mapSearchInput').addEventListener('keydown', (e) => {
+  document.getElementById('mapSearchBtn')?.addEventListener('click', searchLocation);
+  document.getElementById('mapSearchInput')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       searchLocation();
@@ -440,6 +440,15 @@ function initGlassDock() {
   const pdfBtn = document.getElementById('savePdfBtn');
   if (pdfBtn) {
     pdfBtn.addEventListener('click', exportMapToPdf);
+  }
+
+  // Collapse button
+  const collapseBtn = document.getElementById('dockCollapseBtn');
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.body.classList.add('controls-collapsed');
+    });
   }
 
   document.addEventListener('keydown', (e) => {

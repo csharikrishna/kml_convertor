@@ -263,9 +263,9 @@
   <!-- Interactive Map Workstation Viewport -->
   <div class="share-map-wrapper">
 
-    <!-- Single Persistent Controls FAB Button (Always Visible) -->
-    <button type="button" class="map-controls-hub-btn" id="mapControlsHubBtn" title="Toggle Map Workstation Controls">
-      <svg class="hub-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Single Persistent Controls FAB Button (Only visible when dock is collapsed / idle) -->
+    <button type="button" class="map-controls-hub-btn" id="mapControlsHubBtn" title="Show Map Controls">
+      <svg class="hub-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="4" y1="21" x2="4" y2="14"></line>
         <line x1="4" y1="10" x2="4" y2="3"></line>
         <line x1="12" y1="21" x2="12" y2="12"></line>
@@ -283,16 +283,12 @@
     <div class="floating-glass-dock" id="glassDock">
       <div class="glass-search-box">
         <div class="search-icon-wrapper">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
         </div>
-        <input type="text" id="mapSearchInput" class="glass-search-input" placeholder="Search coordinates, cities, landmarks...">
-        <button type="button" class="glass-search-btn" id="mapSearchBtn">
-          <span>Search</span>
-          <kbd class="kbd-hint">↵</kbd>
-        </button>
+        <input type="text" id="mapSearchInput" class="glass-search-input" placeholder="Search places...">
       </div>
 
       <div class="dock-separator"></div>
@@ -300,24 +296,24 @@
       <div class="glass-dock-actions">
         <!-- Basemap Switcher -->
         <div class="basemap-selector-wrap">
-          <select id="basemapSelect" class="glass-dock-select" title="Switch Satellite / Basemap">
-            <option value="google_hybrid" selected>🛰️ Google Satellite (Ultra-Fast)</option>
-            <option value="esri_world">🌍 Esri Clarity</option>
-            <option value="osm_streets">🗺️ Carto Streets</option>
+          <select id="basemapSelect" class="glass-dock-select" title="Switch Basemap">
+            <option value="google_hybrid" selected>🛰️ Satellite</option>
+            <option value="esri_world">🌍 Esri</option>
+            <option value="osm_streets">🗺️ Streets</option>
           </select>
         </div>
 
         <!-- Fit Bounds -->
         <button type="button" class="glass-dock-btn" id="fitBoundsBtn" title="Fit to Drawing Extents">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
           </svg>
-          <span>Fit Drawing</span>
+          <span>Fit</span>
         </button>
 
         <!-- Measurement Tool -->
-        <button type="button" class="glass-dock-btn" id="measureBtn" title="Measure Geodesic Distance">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button type="button" class="glass-dock-btn" id="measureBtn" title="Measure Distance">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.3 8.7 8.7 21.3a2.12 2.12 0 0 1-3 0L2.7 18.3a2.12 2.12 0 0 1 0-3L15.3 2.7a2.12 2.12 0 0 1 3 0l3 3a2.12 2.12 0 0 1 0 3Z"></path>
             <path d="m14.5 3.5 2 2"></path>
             <path d="m11.5 6.5 2 2"></path>
@@ -327,27 +323,36 @@
           <span>Measure</span>
         </button>
 
+        <!-- Save as PDF Tool -->
+        <button type="button" class="glass-dock-btn" id="savePdfBtn" title="Export Map to PDF">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <span id="savePdfText">PDF</span>
+        </button>
+
         <!-- Fullscreen Mode Toggle -->
-        <button type="button" class="glass-dock-btn" id="fullscreenBtn" title="Toggle Fullscreen Map Workstation">
-          <svg id="fullscreenIconSvg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button type="button" class="glass-dock-btn" id="fullscreenBtn" title="Toggle Fullscreen">
+          <svg id="fullscreenIconSvg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 3 21 3 21 9"></polyline>
             <polyline points="9 21 3 21 3 15"></polyline>
             <line x1="21" y1="3" x2="14" y2="10"></line>
             <line x1="3" y1="21" x2="10" y2="14"></line>
           </svg>
-          <span id="fullscreenText">Fullscreen</span>
+          <span id="fullscreenText" style="display:none;">Fullscreen</span>
         </button>
 
-        <!-- Save as PDF Tool -->
-        <button type="button" class="glass-dock-btn" id="savePdfBtn" title="Export Map to PDF (All Points & Polygons Covered)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
+        <div class="dock-separator"></div>
+
+        <!-- Collapse Button -->
+        <button type="button" class="glass-dock-btn dock-collapse-btn" id="dockCollapseBtn" title="Hide Controls">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
-          <span id="savePdfText">Save PDF</span>
         </button>
       </div>
     </div>
@@ -986,6 +991,10 @@
       document.getElementById('measureFinishBtn')?.addEventListener('click', toggleMeasurement);
       document.getElementById('fullscreenBtn')?.addEventListener('click', toggleFullscreen);
       document.getElementById('savePdfBtn')?.addEventListener('click', exportMapToPdf);
+      document.getElementById('dockCollapseBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.body.classList.add('controls-collapsed');
+      });
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && isFullscreenMode) {
           toggleFullscreen();
