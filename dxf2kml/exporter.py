@@ -149,7 +149,7 @@ class KMLExporter:
         ratio = text_height / ref
         mult = math.sqrt(ratio) if ratio > 0 else 1.0
         relative = self.config.default_label_scale * mult
-        return round(max(0.25, min(2.0, relative)), 3)
+        return round(max(0.95, min(3.5, relative)), 3)
 
     @staticmethod
     def _resolved_rgb(aci: Optional[int], rgb: Optional[Tuple[int, int, int]]) -> Optional[Tuple[int, int, int]]:
@@ -313,8 +313,11 @@ class KMLExporter:
         if lbl.font_family:
             data["Font"] = lbl.font_family
 
-        # If vector ground text is enabled, generate 3D ground geometry for Google Earth
-        if self.config.export_vector_text and lbl.height > 0:
+        text_mode = getattr(self.config, "kml_text_mode", "screen")
+        point_xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
+
+        # If vector ground geometry requested, generate 3D polygon glyphs
+        if text_mode in ("vector", "both") and lbl.height > 0:
             loops = self._text_to_wcs_loops(lbl)
             if loops:
                 vector_style = self.style_manager.get_vector_label_style(self._label_color(lbl)[0])
@@ -328,21 +331,24 @@ class KMLExporter:
                             f"</Polygon>"
                         )
                 if poly_xmls:
-                    geom_xml = (
-                        f"<MultiGeometry>{''.join(poly_xmls)}</MultiGeometry>"
-                        if len(poly_xmls) > 1
-                        else poly_xmls[0]
-                    )
-                    out.write(self._placemark(lbl.text, vector_style, data, geom_xml))
+                    if text_mode == "both":
+                        # MultiGeometry: Both Ground Polygon Contours AND Billboarded Placemark Screen Label
+                        geom_xml = f"<MultiGeometry>{''.join(poly_xmls)}{point_xml}</MultiGeometry>"
+                        out.write(self._placemark(lbl.text, style, data, geom_xml))
+                    else:
+                        geom_xml = (
+                            f"<MultiGeometry>{''.join(poly_xmls)}</MultiGeometry>"
+                            if len(poly_xmls) > 1
+                            else poly_xmls[0]
+                        )
+                        out.write(self._placemark(lbl.text, vector_style, data, geom_xml))
                 else:
-                    xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
-                    out.write(self._placemark(lbl.text, style, data, xml))
+                    out.write(self._placemark(lbl.text, style, data, point_xml))
             else:
-                xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
-                out.write(self._placemark(lbl.text, style, data, xml))
+                out.write(self._placemark(lbl.text, style, data, point_xml))
         else:
-            xml = f"<Point><altitudeMode>clampToGround</altitudeMode><coordinates>{_coords_text([(lon, lat, elev)])}</coordinates></Point>"
-            out.write(self._placemark(lbl.text, style, data, xml))
+            # Clean, high-contrast, scalable Google Earth Placemark label with transparent icon (no pins)
+            out.write(self._placemark(lbl.text, style, data, point_xml))
         self._preview_add(
             {"type": "Point", "coordinates": [lon, lat]},
             {

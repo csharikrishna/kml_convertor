@@ -47,18 +47,22 @@ function initTheme() {
   } catch (e) {}
 }
 
-// Auto-hide floating search dock and telemetry bar on 2.5s cursor inactivity
+// Auto-hide workstation controls on 2.5s inactivity or collapse into Single Persistent Button
 function initIdleUiAutoHide() {
   let idleTimer = null;
   const IDLE_DELAY_MS = 2500;
+  const hubBtn = document.getElementById('mapControlsHubBtn');
+  const searchInput = document.getElementById('mapSearchInput');
 
   function wakeUi() {
+    if (document.body.classList.contains('controls-collapsed')) {
+      return; // Explicitly collapsed: remain collapsed until toggled
+    }
     if (document.body.classList.contains('ui-idle')) {
       document.body.classList.remove('ui-idle');
     }
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      const searchInput = document.getElementById('mapSearchInput');
       const isInputFocused = searchInput && document.activeElement === searchInput;
       if (!isInputFocused && typeof isMeasuring !== 'undefined' && !isMeasuring) {
         document.body.classList.add('ui-idle');
@@ -66,9 +70,32 @@ function initIdleUiAutoHide() {
     }, IDLE_DELAY_MS);
   }
 
-  ['mousemove', 'mousedown', 'touchstart', 'touchmove', 'keydown', 'wheel'].forEach(evt => {
-    window.addEventListener(evt, wakeUi, { passive: true });
+  // Toggle button click handler
+  hubBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (document.body.classList.contains('ui-idle') || document.body.classList.contains('controls-collapsed')) {
+      // Expand controls
+      document.body.classList.remove('ui-idle');
+      document.body.classList.remove('controls-collapsed');
+      wakeUi();
+    } else {
+      // Collapse controls into single persistent button
+      document.body.classList.add('controls-collapsed');
+      clearTimeout(idleTimer);
+    }
   });
+
+  const mapTarget = document.getElementById('mapCard') || document.getElementById('shareMap') || window;
+  ['mousemove', 'mousedown', 'touchstart', 'touchmove', 'keydown', 'wheel'].forEach(evt => {
+    mapTarget.addEventListener(evt, wakeUi, { passive: true });
+  });
+
+  searchInput?.addEventListener('focus', () => {
+    clearTimeout(idleTimer);
+    document.body.classList.remove('ui-idle');
+    document.body.classList.remove('controls-collapsed');
+  });
+  searchInput?.addEventListener('blur', wakeUi);
 
   wakeUi();
 }
@@ -223,26 +250,55 @@ function initMap() {
   }).setView([15.8281, 78.0373], 11);
 
   L.control.zoom({ position: 'topleft' }).addTo(map);
-
-  // Esri World Imagery Satellite Tile Layer (The crisp original satellite view)
-  L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    {
+ 
+  // Multi-CDN Ultra-Fast Basemaps (Google Satellite Hybrid, Esri Clarity, Carto Streets)
+  const basemaps = {
+    google_hybrid: L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      subdomains: ['0', '1', '2', '3'],
+      maxNativeZoom: 20,
+      maxZoom: 22,
+      keepBuffer: 8,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
+      updateInterval: 80,
+      attribution: 'Imagery &copy; Google'
+    }),
+    esri_world: L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxNativeZoom: 18,
       maxZoom: 22,
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-    }
-  ).addTo(map);
-
-  // Esri Reference Places/Labels overlay layer
-  L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-    {
-      maxNativeZoom: 18,
+      keepBuffer: 8,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
+      updateInterval: 80,
+      attribution: 'Tiles &copy; Esri'
+    }),
+    osm_streets: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd',
+      maxNativeZoom: 19,
       maxZoom: 22,
-      attribution: 'Esri'
-    }
-  ).addTo(map);
+      keepBuffer: 8,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
+      updateInterval: 80,
+      attribution: '&copy; CartoDB, &copy; OpenStreetMap'
+    })
+  };
+
+  let activeBasemap = basemaps.google_hybrid;
+  activeBasemap.addTo(map);
+
+  const basemapSelect = document.getElementById('basemapSelect');
+  if (basemapSelect) {
+    basemapSelect.addEventListener('change', () => {
+      const selected = basemapSelect.value;
+      if (basemaps[selected] && basemaps[selected] !== activeBasemap) {
+        map.removeLayer(activeBasemap);
+        activeBasemap = basemaps[selected];
+        activeBasemap.addTo(map);
+        if (geojsonLayerGroup) geojsonLayerGroup.bringToFront();
+      }
+    });
+  }
 
   geojsonLayerGroup = L.layerGroup().addTo(map);
 

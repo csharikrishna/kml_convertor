@@ -205,11 +205,20 @@
             </div>
 
             <div class="settings-divider"></div>
-            <label class="form-label" style="font-size: 0.82rem; margin-bottom: 0.4rem;">🏷️ Label Settings</label>
+            <label class="form-label" style="font-size: 0.82rem; margin-bottom: 0.4rem;">🏷️ Label & Google Earth Settings</label>
             
             <div class="slider-group">
-              <label for="label_scale">Label Text Scale: <span id="scaleVal">0.7</span></label>
-              <input type="range" id="label_scale" name="label_scale" min="0.2" max="1.5" step="0.05" value="0.7" class="slider-input">
+              <label for="label_scale">Label Text Scale: <span id="scaleVal">1.2</span></label>
+              <input type="range" id="label_scale" name="label_scale" min="0.5" max="3.0" step="0.1" value="1.2" class="slider-input">
+            </div>
+
+            <div class="checkbox-row" style="margin-top: 0.5rem; align-items: center;">
+              <label for="kml_text_mode" style="margin-right: 0.5rem; font-size: 0.82rem; white-space: nowrap;">Google Earth Text:</label>
+              <select id="kml_text_mode" name="kml_text_mode" class="select-box" style="padding: 0.35rem 0.5rem; font-size: 0.82rem; flex: 1;">
+                <option value="screen" selected>Legible Screen Labels (Clear at any zoom)</option>
+                <option value="both">Hybrid (Screen Labels + CAD Ground Outlines)</option>
+                <option value="vector">CAD Ground Outlines Only</option>
+              </select>
             </div>
 
             <div class="checkbox-row" style="margin-top: 0.5rem; align-items: center;">
@@ -339,6 +348,22 @@
         <!-- Map Card Container -->
         <div class="map-card" id="mapCard">
 
+          <!-- Single Persistent Map Controls FAB Button (Always Visible) -->
+          <button type="button" class="map-controls-hub-btn" id="mapControlsHubBtn" title="Toggle Map Workstation Controls">
+            <svg class="hub-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="21" x2="4" y2="14"></line>
+              <line x1="4" y1="10" x2="4" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12" y2="3"></line>
+              <line x1="20" y1="21" x2="20" y2="16"></line>
+              <line x1="20" y1="12" x2="20" y2="3"></line>
+              <line x1="1" y1="14" x2="7" y2="14"></line>
+              <line x1="9" y1="8" x2="15" y2="8"></line>
+              <line x1="17" y1="16" x2="23" y2="16"></line>
+            </svg>
+            <span class="hub-text">Controls</span>
+          </button>
+
           <!-- Floating Frosted Glass Dock -->
           <div class="floating-glass-dock" id="glassDock">
             <div class="glass-search-box">
@@ -358,6 +383,15 @@
             <div class="dock-separator"></div>
 
             <div class="glass-dock-actions">
+              <!-- Basemap Switcher -->
+              <div class="basemap-selector-wrap">
+                <select id="basemapSelect" class="glass-dock-select" title="Switch Satellite / Basemap">
+                  <option value="google_hybrid" selected>🛰️ Google Satellite (Ultra-Fast)</option>
+                  <option value="esri_world">🌍 Esri Clarity</option>
+                  <option value="osm_streets">🗺️ Carto Streets</option>
+                </select>
+              </div>
+
               <!-- Fit Bounds -->
               <button type="button" class="glass-dock-btn" id="fitBoundsBtn" title="Fit to Drawing Extents">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

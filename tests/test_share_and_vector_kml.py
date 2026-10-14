@@ -23,6 +23,7 @@ def test_vector_ground_text_kml_export():
         "output_epsg": "EPSG:4326",
         "export_text": "true",
         "export_points": "true",
+        "kml_text_mode": "vector",
         "output_format": "kml",
     }
 
@@ -50,6 +51,38 @@ def test_vector_ground_text_kml_export():
     assert data["geojson"] is not None
     text_previews = [f for f in data["geojson"]["features"] if f["properties"].get("type") == "text"]
     assert len(text_previews) > 0
+
+
+def test_screen_label_kml_export():
+    """Verify that screen text mode generates legible Google Earth Placemarks with transparent icon."""
+    sample_path = Path(__file__).resolve().parent.parent / "examples" / "Althur_padu_bund.dwg"
+    with open(sample_path, "rb") as f:
+        file_bytes = f.read()
+
+    form_data = {
+        "input_epsg": "EPSG:32644",
+        "output_epsg": "EPSG:4326",
+        "export_text": "true",
+        "export_points": "true",
+        "kml_text_mode": "screen",
+        "label_scale": "1.2",
+        "output_format": "kml",
+    }
+
+    res = client.post(
+        "/api/convert",
+        files={"file": ("Althur_padu_bund.dwg", file_bytes, "application/acad")},
+        data=form_data,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    kml_text = client.get(f"/api/download/{data['job_id']}/{data['filename']}").text
+
+    # Verify screen placemark with LabelStyle and transparent icon (no pushpin)
+    assert "<Point>" in kml_text
+    assert "trans.png" in kml_text
+    assert "<LabelStyle>" in kml_text
+    assert "</LabelStyle>" in kml_text
 
 
 def test_temporary_share_link_lifecycle():

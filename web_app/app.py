@@ -230,7 +230,7 @@ PAGE_CSP = (
     "script-src 'self' https://unpkg.com; "
     "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; "
     "font-src https://fonts.gstatic.com; "
-    "img-src 'self' data: https://unpkg.com https://server.arcgisonline.com https://services.arcgisonline.com https://tile.openstreetmap.org https://*.basemaps.cartocdn.com https://basemaps.cartocdn.com; "
+    "img-src 'self' data: https://unpkg.com https://server.arcgisonline.com https://services.arcgisonline.com https://*.arcgisonline.com https://tile.openstreetmap.org https://*.basemaps.cartocdn.com https://basemaps.cartocdn.com https://*.google.com https://*.googleapis.com https://*.gstatic.com; "
     "connect-src 'self' https://nominatim.openstreetmap.org https://tile.openstreetmap.org; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
@@ -372,7 +372,8 @@ def convert_file(
     conversion_type: str = Form("raw"),  # "standard" or "raw"
     merge_lines: bool = Form(True),
     ignore_large_polygons: bool = Form(True),
-    label_scale: float = Form(0.7),
+    label_scale: float = Form(1.2),
+    kml_text_mode: str = Form("screen"),
     export_text: bool = Form(True),
     export_points: bool = Form(True),
     auto_scale_text: bool = Form(True),
@@ -422,6 +423,7 @@ def convert_file(
             merge_lines=merge_lines,
             ignore_large_polygons=ignore_large_polygons,
             default_label_scale=label_scale,
+            kml_text_mode=kml_text_mode,
             export_text=export_text,
             export_points=export_points,
             auto_scale_text=auto_scale_text,

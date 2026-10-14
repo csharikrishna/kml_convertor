@@ -28,6 +28,10 @@ class ConverterConfig(BaseModel):
     # Text / Font Accuracy
     auto_scale_text: bool = Field(default=True, description="Automatically scale KML labels based on DXF text height")
     reference_text_height: float = Field(default=2.5, gt=0, description="Reference DXF text height (in drawing units) for relative KML label scaling")
+    kml_text_mode: str = Field(
+        default="screen",
+        description="Google Earth text mode: 'screen' (legible billboard labels, recommended), 'both' (screen labels + ground outlines), or 'vector' (ground outlines only)"
+    )
     export_vector_text: bool = Field(
         default=True,
         description="Export CAD labels as true 3D vector ground geometry rotated at CAD angle (clean & professional in Google Earth)"
@@ -53,7 +57,7 @@ class ConverterConfig(BaseModel):
     default_line_width: float = Field(default=2.0, gt=0, description="Default KML LineString width in pixels")
     default_line_color: str = Field(default="ff0000ff", pattern=r"^[0-9a-fA-F]{8}$", description="Default KML color in AABBGGRR hex format")
     default_point_scale: float = Field(default=0.8, ge=0, description="Default KML Placemark icon scale")
-    default_label_scale: float = Field(default=0.7, ge=0, le=10, description="Default KML Label text scale (e.g. 0.5 to 1.0)")
+    default_label_scale: float = Field(default=1.2, ge=0, le=10, description="Default KML Label text scale (e.g. 1.0 to 2.5)")
     line_width_multiplier: float = Field(default=1.0, gt=0, description="Multiplier for all KML line widths")
     point_icon_url: str = Field(
         default="http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png",

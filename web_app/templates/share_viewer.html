@@ -180,16 +180,31 @@
       height: 100%;
       background: #f8fafc;
     }
-    /* Auto-hide floating search dock and telemetry bar on 2.5s cursor inactivity */
-    body.ui-idle .floating-glass-dock {
+    /* Auto-hide / Collapsed state: all map UI disappears into the single button */
+    body.ui-idle .floating-glass-dock,
+    body.controls-collapsed .floating-glass-dock {
       opacity: 0;
-      transform: translateY(-24px);
+      transform: translateY(-80px);
       pointer-events: none;
     }
-    body.ui-idle .map-status-bar {
+    body.ui-idle .map-status-bar,
+    body.controls-collapsed .map-status-bar {
       opacity: 0;
       transform: translateY(100%);
       pointer-events: none;
+    }
+    body.ui-idle .layer-panel,
+    body.controls-collapsed .layer-panel {
+      opacity: 0;
+      pointer-events: none;
+    }
+    body.ui-idle .map-controls-hub-btn,
+    body.controls-collapsed .map-controls-hub-btn {
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      background: #ffffff;
+      border-color: #2563eb;
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.22);
     }
   </style>
 </head>
@@ -248,6 +263,22 @@
   <!-- Interactive Map Workstation Viewport -->
   <div class="share-map-wrapper">
 
+    <!-- Single Persistent Controls FAB Button (Always Visible) -->
+    <button type="button" class="map-controls-hub-btn" id="mapControlsHubBtn" title="Toggle Map Workstation Controls">
+      <svg class="hub-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="21" x2="4" y2="14"></line>
+        <line x1="4" y1="10" x2="4" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12" y2="3"></line>
+        <line x1="20" y1="21" x2="20" y2="16"></line>
+        <line x1="20" y1="12" x2="20" y2="3"></line>
+        <line x1="1" y1="14" x2="7" y2="14"></line>
+        <line x1="9" y1="8" x2="15" y2="8"></line>
+        <line x1="17" y1="16" x2="23" y2="16"></line>
+      </svg>
+      <span class="hub-text">Controls</span>
+    </button>
+
     <!-- Floating Frosted Glass Dock -->
     <div class="floating-glass-dock" id="glassDock">
       <div class="glass-search-box">
@@ -267,6 +298,15 @@
       <div class="dock-separator"></div>
 
       <div class="glass-dock-actions">
+        <!-- Basemap Switcher -->
+        <div class="basemap-selector-wrap">
+          <select id="basemapSelect" class="glass-dock-select" title="Switch Satellite / Basemap">
+            <option value="google_hybrid" selected>🛰️ Google Satellite (Ultra-Fast)</option>
+            <option value="esri_world">🌍 Esri Clarity</option>
+            <option value="osm_streets">🗺️ Carto Streets</option>
+          </select>
+        </div>
+
         <!-- Fit Bounds -->
         <button type="button" class="glass-dock-btn" id="fitBoundsBtn" title="Fit to Drawing Extents">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -405,12 +445,54 @@
       map = L.map('shareMap', { zoomControl: false, attributionControl: true, maxZoom: 22 }).setView([14.055, 79.526], 14);
       L.control.zoom({ position: 'topleft' }).addTo(map);
 
-      // High-res Esri World Imagery Basemap (maxNativeZoom: 18 auto-magnifies deep zoom levels seamlessly)
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxNativeZoom: 18,
-        maxZoom: 22,
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-      }).addTo(map);
+      // Multi-CDN Ultra-Fast Basemaps (Google Satellite Hybrid, Esri Clarity, Carto Streets)
+      const basemaps = {
+        google_hybrid: L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+          subdomains: ['0', '1', '2', '3'],
+          maxNativeZoom: 20,
+          maxZoom: 22,
+          keepBuffer: 8,
+          updateWhenIdle: false,
+          updateWhenZooming: false,
+          updateInterval: 80,
+          attribution: 'Imagery &copy; Google'
+        }),
+        esri_world: L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxNativeZoom: 18,
+          maxZoom: 22,
+          keepBuffer: 8,
+          updateWhenIdle: false,
+          updateWhenZooming: false,
+          updateInterval: 80,
+          attribution: 'Tiles &copy; Esri'
+        }),
+        osm_streets: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+          subdomains: 'abcd',
+          maxNativeZoom: 19,
+          maxZoom: 22,
+          keepBuffer: 8,
+          updateWhenIdle: false,
+          updateWhenZooming: false,
+          updateInterval: 80,
+          attribution: '&copy; CartoDB, &copy; OpenStreetMap'
+        })
+      };
+
+      let activeBasemap = basemaps.google_hybrid;
+      activeBasemap.addTo(map);
+
+      const basemapSelect = document.getElementById('basemapSelect');
+      if (basemapSelect) {
+        basemapSelect.addEventListener('change', () => {
+          const selected = basemapSelect.value;
+          if (basemaps[selected] && basemaps[selected] !== activeBasemap) {
+            map.removeLayer(activeBasemap);
+            activeBasemap = basemaps[selected];
+            activeBasemap.addTo(map);
+            if (geojsonLayerGroup) geojsonLayerGroup.bringToFront();
+          }
+        });
+      }
 
       geojsonLayerGroup = L.featureGroup().addTo(map);
 
@@ -803,14 +885,18 @@
     function initIdleUiAutoHide() {
       let idleTimer = null;
       const IDLE_DELAY_MS = 2500;
+      const hubBtn = document.getElementById('mapControlsHubBtn');
+      const sInput = document.getElementById('mapSearchInput');
 
       function wakeUi() {
+        if (document.body.classList.contains('controls-collapsed')) {
+          return;
+        }
         if (document.body.classList.contains('ui-idle')) {
           document.body.classList.remove('ui-idle');
         }
         clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
-          const sInput = document.getElementById('mapSearchInput');
           const isInputFocused = sInput && document.activeElement === sInput;
           if (!isInputFocused && !isMeasurementActive) {
             document.body.classList.add('ui-idle');
@@ -818,9 +904,29 @@
         }, IDLE_DELAY_MS);
       }
 
-      ['mousemove', 'mousedown', 'touchstart', 'touchmove', 'keydown', 'wheel'].forEach(evt => {
-        window.addEventListener(evt, wakeUi, { passive: true });
+      hubBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (document.body.classList.contains('ui-idle') || document.body.classList.contains('controls-collapsed')) {
+          document.body.classList.remove('ui-idle');
+          document.body.classList.remove('controls-collapsed');
+          wakeUi();
+        } else {
+          document.body.classList.add('controls-collapsed');
+          clearTimeout(idleTimer);
+        }
       });
+
+      const mapTarget = document.getElementById('shareMap') || window;
+      ['mousemove', 'mousedown', 'touchstart', 'touchmove', 'keydown', 'wheel'].forEach(evt => {
+        mapTarget.addEventListener(evt, wakeUi, { passive: true });
+      });
+
+      sInput?.addEventListener('focus', () => {
+        clearTimeout(idleTimer);
+        document.body.classList.remove('ui-idle');
+        document.body.classList.remove('controls-collapsed');
+      });
+      sInput?.addEventListener('blur', wakeUi);
 
       wakeUi();
     }

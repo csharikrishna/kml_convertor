@@ -861,19 +861,62 @@ main.container {
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15) !important;
 }
 
+/* Single Persistent Map Controls FAB Button (Always Visible) */
+.map-controls-hub-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1005;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.52rem 0.85rem;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(0, 0, 0, 0.05);
+  color: #0f172a;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+  user-select: none;
+}
+
+.map-controls-hub-btn:hover {
+  background: #ffffff;
+  border-color: #2563eb;
+  color: #2563eb;
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.18);
+  transform: translateY(-1px);
+}
+
+.map-controls-hub-btn .hub-icon {
+  color: #2563eb;
+  transition: transform 0.2s ease;
+}
+
+.map-controls-hub-btn:hover .hub-icon {
+  transform: rotate(45deg);
+}
+
 /* Floating Glass Dock */
 .floating-glass-dock {
   position: absolute;
   top: 1rem;
-  left: 4.5rem;
-  right: 1rem;
+  left: 4.2rem;
+  right: 7.4rem;
   z-index: 1000;
   display: flex;
   align-items: center;
   gap: 0.55rem;
   pointer-events: none;
   flex-wrap: wrap;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(226, 232, 240, 0.95);
@@ -887,17 +930,69 @@ main.container {
   pointer-events: auto;
 }
 
-/* Auto-hide floating search dock and telemetry bar on 2.5s cursor inactivity */
-body.ui-idle .floating-glass-dock {
+/* Basemap Switcher dropdown inside dock */
+.basemap-selector-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.glass-dock-select {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.42rem 0.65rem;
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.glass-dock-select:hover,
+.glass-dock-select:focus {
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+/* Auto-hide / Collapsed state: all map UI disappears into the single button */
+body.ui-idle .floating-glass-dock,
+body.controls-collapsed .floating-glass-dock {
   opacity: 0;
-  transform: translateY(-24px);
+  transform: translateY(-80px);
   pointer-events: none;
 }
 
-body.ui-idle .map-status-bar {
+body.ui-idle .map-status-bar,
+body.controls-collapsed .map-status-bar {
   opacity: 0;
   transform: translateY(100%);
   pointer-events: none;
+}
+
+body.ui-idle .leaflet-control-zoom,
+body.controls-collapsed .leaflet-control-zoom {
+  opacity: 0.25;
+  transition: opacity 0.3s ease;
+}
+
+body.ui-idle .layer-panel,
+body.controls-collapsed .layer-panel {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+/* The single button is ALWAYS visible */
+body.ui-idle .map-controls-hub-btn,
+body.controls-collapsed .map-controls-hub-btn {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  background: #ffffff;
+  border-color: #2563eb;
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.22);
 }
 
 .glass-search-box {
