@@ -436,11 +436,148 @@ function initGlassDock() {
     fsBtn.addEventListener('click', toggleFullscreen);
   }
 
+  // Save as PDF button
+  const pdfBtn = document.getElementById('savePdfBtn');
+  if (pdfBtn) {
+    pdfBtn.addEventListener('click', exportMapToPdf);
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isFullscreen) {
       toggleFullscreen();
     }
   });
+}
+
+async function exportMapToPdf() {
+  if (!geojsonLayerGroup) return;
+  const layers = geojsonLayerGroup.getLayers();
+  if (layers.length === 0) {
+    alert('No CAD drawing currently loaded on the map.');
+    return;
+  }
+
+  const pdfBtn = document.getElementById('savePdfBtn');
+  const originalHtml = pdfBtn ? pdfBtn.innerHTML : '';
+
+  try {
+    if (pdfBtn) {
+      pdfBtn.disabled = true;
+      pdfBtn.innerHTML = `<span>Framing...</span>`;
+    }
+
+    // 1. Automatically fit bounds so ALL points and the whole polygon are 100% covered and visible
+    const firstLayer = layers[0];
+    if (firstLayer && typeof firstLayer.getBounds === 'function') {
+      const bounds = firstLayer.getBounds();
+      if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [55, 55], animate: false });
+      }
+    }
+
+    if (pdfBtn) {
+      pdfBtn.innerHTML = `<span>Capturing...</span>`;
+    }
+
+    // 2. Wait for map tiles and vector layers to settle into new viewport
+    await new Promise(r => setTimeout(r, 650));
+
+    // 3. Fallback to print if html2canvas or jspdf not present
+    if (!window.html2canvas || !window.jspdf) {
+      window.print();
+      return;
+    }
+
+    const mapEl = document.getElementById('map');
+    const canvas = await window.html2canvas(mapEl, {
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      scale: 2,
+      ignoreElements: (el) => {
+        if (!el || !el.classList) return false;
+        return el.classList.contains('floating-glass-dock') ||
+               el.classList.contains('map-controls-hub-btn') ||
+               el.classList.contains('layer-panel') ||
+               el.classList.contains('measure-banner') ||
+               el.classList.contains('feature-inspector-card') ||
+               el.classList.contains('leaflet-control-zoom');
+      }
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth(); // 297mm
+    const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
+
+    // Header Banner
+    pdf.setFillColor(248, 250, 252);
+    pdf.rect(0, 0, pageWidth, 16, 'F');
+    pdf.setDrawColor(226, 232, 240);
+    pdf.line(0, 16, pageWidth, 16);
+
+    // Header Title & File
+    const fileInput = document.getElementById('file');
+    const fileName = (fileInput && fileInput.files && fileInput.files[0]) ? fileInput.files[0].name : 'CAD Drawing';
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(fileName, 10, 10.5);
+
+    // Header Metadata
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    const dateStr = new Date().toLocaleString();
+    const crs = document.getElementById('target_crs')?.value || 'WGS84';
+    pdf.text(`Exported: ${dateStr} • Datum: ${crs} • Satellite Map`, pageWidth - 10, 10.5, { align: 'right' });
+
+    // Map dimensions on page
+    const margin = 10;
+    const topY = 20;
+    const availWidth = pageWidth - (margin * 2);
+    const availHeight = pageHeight - topY - 10;
+
+    const imgRatio = canvas.width / canvas.height;
+    let targetWidth = availWidth;
+    let targetHeight = targetWidth / imgRatio;
+
+    if (targetHeight > availHeight) {
+      targetHeight = availHeight;
+      targetWidth = targetHeight * imgRatio;
+    }
+
+    const posX = margin + (availWidth - targetWidth) / 2;
+    const posY = topY + (availHeight - targetHeight) / 2;
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    pdf.addImage(imgData, 'JPEG', posX, posY, targetWidth, targetHeight, undefined, 'FAST');
+
+    // Border around map image
+    pdf.setDrawColor(203, 213, 225);
+    pdf.rect(posX, posY, targetWidth, targetHeight, 'S');
+
+    // Footer
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('CAD2KML Studio Map Report • Full Polygon and Point Coverage Verified', pageWidth / 2, pageHeight - 4, { align: 'center' });
+
+    const safeName = (fileName.replace(/\.[^/.]+$/, "") || 'CAD_Map') + '_Report.pdf';
+    pdf.save(safeName);
+  } catch (err) {
+    console.error('PDF export error:', err);
+    window.print();
+  } finally {
+    if (pdfBtn) {
+      pdfBtn.disabled = false;
+      pdfBtn.innerHTML = originalHtml;
+    }
+  }
 }
 
 function fitDrawingBounds() {
@@ -1049,18 +1186,18 @@ function getLabelTier(text, textHeight, medianHeight) {
 function calculateLabelFontSize(textHeight, labelScale, zoom) {
   const currentZoom = (zoom !== undefined && zoom !== null) ? zoom : (map ? map.getZoom() : 15);
   const zoomDiff = currentZoom - 15;
-  const zoomFactor = zoomDiff >= 0 ? Math.pow(1.22, zoomDiff) : Math.pow(1.14, zoomDiff);
+  const zoomFactor = 1 + (zoomDiff * 0.04);
 
   let cadHeightFactor = 1.0;
   const h = Number(textHeight);
   if (h > 0 && currentMedianTextHeight > 0) {
     const ratio = h / currentMedianTextHeight;
-    cadHeightFactor = Math.max(0.65, Math.min(2.0, Math.sqrt(ratio)));
+    cadHeightFactor = Math.max(0.9, Math.min(1.2, Math.pow(ratio, 0.2)));
   }
 
-  const basePx = 13.5;
-  const calculatedPx = basePx * (labelScale || 0.7) * zoomFactor * cadHeightFactor;
-  return Math.max(8, Math.min(38, Math.round(calculatedPx)));
+  const scale = (labelScale !== undefined && labelScale !== null) ? labelScale : 1.0;
+  const calculatedPx = 11.0 * (scale > 0 ? (0.8 + 0.2 * Math.min(scale, 1.5)) : 1.0) * zoomFactor * cadHeightFactor;
+  return Math.max(9, Math.min(13, Math.round(calculatedPx)));
 }
 
 function updateTextLabelSizes() {
@@ -1528,11 +1665,10 @@ function buildLayerPanel(layerSet) {
     }
 
     const row = document.createElement('div');
-    row.className = 'layer-row';
+    row.className = 'layer-item';
 
-    // Header line: Color chip + checkbox + name
-    const headerLine = document.createElement('div');
-    headerLine.className = 'layer-header-line';
+    const top = document.createElement('div');
+    top.className = 'layer-item-top';
 
     const colorChip = document.createElement('span');
     colorChip.className = 'layer-color-chip';
@@ -1540,6 +1676,7 @@ function buildLayerPanel(layerSet) {
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
+    checkbox.className = 'layer-visibility-chk';
     checkbox.checked = layerVisibility[layerName] !== false;
     checkbox.id = `layer_${index}`;
     checkbox.addEventListener('change', () => {
@@ -1551,37 +1688,36 @@ function buildLayerPanel(layerSet) {
 
     const label = document.createElement('label');
     label.htmlFor = checkbox.id;
-    label.className = 'layer-name-lbl';
+    label.className = 'layer-item-name';
     label.textContent = layerName;
+    label.title = layerName;
 
-    headerLine.appendChild(colorChip);
-    headerLine.appendChild(checkbox);
-    headerLine.appendChild(label);
+    top.appendChild(colorChip);
+    top.appendChild(checkbox);
+    top.appendChild(label);
 
-    // Sub-line: Opacity slider
-    const sliderLine = document.createElement('div');
-    sliderLine.className = 'layer-slider-line';
-
-    const opacitySpan = document.createElement('span');
-    opacitySpan.textContent = 'Opacity:';
+    const opacityWrap = document.createElement('div');
+    opacityWrap.className = 'layer-item-opacity';
 
     const opacitySlider = document.createElement('input');
     opacitySlider.type = 'range';
     opacitySlider.min = '0';
     opacitySlider.max = '100';
+    opacitySlider.className = 'layer-opacity-slider';
+    opacitySlider.title = `Opacity: ${Math.round(layerOpacity[layerName] * 100)}%`;
     opacitySlider.value = Math.round(layerOpacity[layerName] * 100);
     opacitySlider.addEventListener('input', () => {
       layerOpacity[layerName] = parseFloat(opacitySlider.value) / 100;
+      opacitySlider.title = `Opacity: ${opacitySlider.value}%`;
       if (lastConversionGeoJSON) {
         renderGeoJSONPreview(lastConversionGeoJSON, false);
       }
     });
 
-    sliderLine.appendChild(opacitySpan);
-    sliderLine.appendChild(opacitySlider);
+    opacityWrap.appendChild(opacitySlider);
 
-    row.appendChild(headerLine);
-    row.appendChild(sliderLine);
+    row.appendChild(top);
+    row.appendChild(opacityWrap);
     body.appendChild(row);
   });
 
