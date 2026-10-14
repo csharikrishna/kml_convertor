@@ -1070,7 +1070,18 @@ async function downloadFinalPdfDocument() {
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(11.5);
     pdf.setTextColor(15, 23, 42);
-    pdf.text(fileName, 10, 10.5);
+
+    try {
+      const logoEl = document.querySelector('.brand-logo-img') || document.querySelector('.brand-badge-icon img');
+      if (logoEl && logoEl.complete && logoEl.naturalWidth > 0) {
+        pdf.addImage(logoEl, 'PNG', 10, 3, 10, 10);
+        pdf.text(fileName, 23, 10.5);
+      } else {
+        pdf.text(fileName, 10, 10.5);
+      }
+    } catch (_) {
+      pdf.text(fileName, 10, 10.5);
+    }
 
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8);

@@ -8,6 +8,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/img/favicon-192.png">
+  <link rel="shortcut icon" href="/static/favicon.ico">
   <link rel="stylesheet" href="/static/css/style.css?v={{ version }}">
   <style>
     body {
@@ -214,11 +217,7 @@
   <header class="share-header">
     <div class="share-brand">
       <div class="brand-badge-icon" title="CAD2KML Geospatial Studio">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-          <polyline points="2 17 12 22 22 17"></polyline>
-          <polyline points="2 12 12 17 22 12"></polyline>
-        </svg>
+        <img src="/static/img/cad2kml_icon.png" alt="CAD2KML" style="width: 24px; height: 24px; object-fit: contain;">
       </div>
       <div class="share-title">
         <span>CAD2KML</span>
@@ -443,12 +442,7 @@
     <div class="modal-card modal-card-pdf-preview">
       <div class="modal-header">
         <div class="modal-title">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-          </svg>
+          <img src="/static/img/cad2kml_icon.png" alt="" style="width: 20px; height: 20px; object-fit: contain;">
           <span>Map Print &amp; PDF Export Preview</span>
         </div>
         <button type="button" class="modal-close-btn" id="pdfExportModalClose" title="Close Preview">&times;</button>
@@ -1616,7 +1610,18 @@
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(11.5);
         pdf.setTextColor(15, 23, 42);
-        pdf.text(fileName, 10, 10.5);
+
+        try {
+          const logoEl = document.querySelector('.brand-badge-icon img');
+          if (logoEl && logoEl.complete && logoEl.naturalWidth > 0) {
+            pdf.addImage(logoEl, 'PNG', 10, 3, 10, 10);
+            pdf.text(fileName, 23, 10.5);
+          } else {
+            pdf.text(fileName, 10, 10.5);
+          }
+        } catch (_) {
+          pdf.text(fileName, 10, 10.5);
+        }
 
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8);

@@ -100,6 +100,31 @@ main.container {
   color: var(--primary);
 }
 
+.brand-logo-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  filter: drop-shadow(0 2px 4px rgba(37, 99, 235, 0.16));
+}
+
+.navbar-brand:hover .brand-logo-img {
+  transform: scale(1.1) rotate(-3deg);
+}
+
+.brand-badge-pro {
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+}
+
 .navbar-links {
   display: flex;
   gap: 1.5rem;
@@ -1553,6 +1578,17 @@ body.controls-collapsed .layer-panel {
 
 .footer-brand {
   font-size: 0.86rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.footer-logo-img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .footer-brand strong {

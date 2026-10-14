@@ -8,6 +8,9 @@
   <meta property="og:title" content="CAD2KML Pro — Free DXF to KML Converter">
   <meta property="og:description" content="Convert AutoCAD DXF survey drawings into Google Earth KML with industry-leading accuracy. Free, no signup required.">
   <meta property="og:type" content="website">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/img/favicon-192.png">
+  <link rel="shortcut icon" href="/static/favicon.ico">
   <link rel="stylesheet" href="/static/css/style.css?v={{ version }}">
   <!-- Google Fonts & Leaflet CSS -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,12 +24,8 @@
   <!-- Navbar -->
   <header class="navbar">
     <a href="/" class="navbar-brand">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />
-        <path stroke-linecap="round" stroke-linejoin="round" d="M3.6 9h16.8M3.6 15h16.8" />
-        <path stroke-linecap="round" stroke-linejoin="round" d="M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18" />
-      </svg>
-      <span>CAD2KML Pro</span>
+      <img src="/static/img/cad2kml_icon.png" alt="CAD2KML Pro Logo" class="brand-logo-img">
+      <span>CAD2KML <span class="brand-badge-pro">PRO</span></span>
     </a>
     <div class="navbar-links">
       <a href="/">Home</a>
@@ -540,7 +539,8 @@
   <footer class="site-footer">
     <div class="footer-inner">
       <div class="footer-brand">
-        <strong>CAD2KML Pro</strong> — Free DXF to KML Converter & GIS Workstation
+        <img src="/static/img/cad2kml_icon.png" alt="CAD2KML" class="footer-logo-img">
+        <span><strong>CAD2KML Pro</strong> — Free DXF to KML Converter &amp; GIS Workstation</span>
       </div>
       <div class="footer-links">
         <a href="/docs">API Documentation</a>
@@ -608,12 +608,7 @@
     <div class="modal-card modal-card-pdf-preview">
       <div class="modal-header">
         <div class="modal-title">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-          </svg>
+          <img src="/static/img/cad2kml_icon.png" alt="" style="width: 20px; height: 20px; object-fit: contain;">
           <span>Map Print &amp; PDF Export Preview</span>
         </div>
         <button type="button" class="modal-close-btn" id="pdfExportModalClose" title="Close Preview">&times;</button>

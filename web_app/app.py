@@ -350,6 +350,9 @@ def health_check():
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
+    fav_file = BASE_DIR / "static" / "favicon.ico"
+    if fav_file.is_file():
+        return FileResponse(fav_file, media_type="image/x-icon")
     return Response(status_code=204, content=b"")
 
 
