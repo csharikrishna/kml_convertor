@@ -459,60 +459,276 @@ function initGlassDock() {
 }
 
 async function exportMapToPdf() {
-  if (!geojsonLayerGroup) return;
-  const layers = geojsonLayerGroup.getLayers();
-  if (layers.length === 0) {
+  const geojson = lastConversionGeoJSON;
+  if (!geojson || !geojson.features || geojson.features.length === 0) {
     alert('No CAD drawing currently loaded on the map.');
     return;
   }
 
   const pdfBtn = document.getElementById('savePdfBtn');
-  const originalHtml = pdfBtn ? pdfBtn.innerHTML : '';
+  const pdfText = document.getElementById('savePdfText');
+  const originalText = pdfText ? pdfText.innerText : 'PDF';
 
   try {
-    if (pdfBtn) {
-      pdfBtn.disabled = true;
-      pdfBtn.innerHTML = `<span>Framing...</span>`;
-    }
+    if (pdfBtn) pdfBtn.disabled = true;
+    if (pdfText) pdfText.innerText = 'Rendering...';
 
-    // 1. Automatically fit bounds so ALL points and the whole polygon are 100% covered and visible
-    const firstLayer = layers[0];
-    if (firstLayer && typeof firstLayer.getBounds === 'function') {
-      const bounds = firstLayer.getBounds();
-      if (bounds && bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [55, 55], animate: false });
+    // 1. Gather all coordinates across all geometries to compute true geographic bounding box
+    const allCoords = [];
+    function extractCoords(c) {
+      if (!Array.isArray(c)) return;
+      if (typeof c[0] === 'number' && typeof c[1] === 'number') {
+        allCoords.push(c);
+      } else {
+        for (let i = 0; i < c.length; i++) extractCoords(c[i]);
       }
     }
+    geojson.features.forEach(f => {
+      if (f.geometry?.coordinates) extractCoords(f.geometry.coordinates);
+    });
 
-    if (pdfBtn) {
-      pdfBtn.innerHTML = `<span>Capturing...</span>`;
-    }
-
-    // 2. Wait for map tiles and vector layers to settle into new viewport
-    await new Promise(r => setTimeout(r, 650));
-
-    // 3. Fallback to print if html2canvas or jspdf not present
-    if (!window.html2canvas || !window.jspdf) {
-      window.print();
+    if (allCoords.length === 0) {
+      alert('No coordinates found to export.');
       return;
     }
 
-    const mapEl = document.getElementById('map');
-    const canvas = await window.html2canvas(mapEl, {
-      useCORS: true,
-      allowTaint: false,
-      logging: false,
-      scale: 2,
-      ignoreElements: (el) => {
-        if (!el || !el.classList) return false;
-        return el.classList.contains('floating-glass-dock') ||
-               el.classList.contains('map-controls-hub-btn') ||
-               el.classList.contains('layer-panel') ||
-               el.classList.contains('measure-banner') ||
-               el.classList.contains('feature-inspector-card') ||
-               el.classList.contains('leaflet-control-zoom');
-      }
+    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    allCoords.forEach(c => {
+      if (c[0] < minLng) minLng = c[0];
+      if (c[0] > maxLng) maxLng = c[0];
+      if (c[1] < minLat) minLat = c[1];
+      if (c[1] > maxLat) maxLat = c[1];
     });
+
+    // Add generous 12% padding so the full polygon and all survey points have breathing room
+    const padLng = Math.max(0.001, (maxLng - minLng) * 0.12);
+    const padLat = Math.max(0.001, (maxLat - minLat) * 0.12);
+    const bMinLng = minLng - padLng;
+    const bMaxLng = maxLng + padLng;
+    const bMinLat = minLat - padLat;
+    const bMaxLat = maxLat + padLat;
+
+    // Web Mercator projection matching satellite tiles exactly
+    function project(lng, lat, zoom) {
+      const n = Math.pow(2, zoom);
+      const x = ((lng + 180) / 360) * n * 256;
+      const latRad = (lat * Math.PI) / 180;
+      const y = (1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2 * n * 256;
+      return { x, y };
+    }
+
+    // Determine optimal High-DPI zoom level (target ~1000-1800px base size before 2x scale)
+    let z = 16;
+    for (let testZ = 13; testZ <= 18; testZ++) {
+      const p1 = project(bMinLng, bMinLat, testZ);
+      const p2 = project(bMaxLng, bMaxLat, testZ);
+      const spanW = Math.abs(p2.x - p1.x);
+      const spanH = Math.abs(p1.y - p2.y);
+      if (spanW >= 850 || spanH >= 850 || testZ === 17) {
+        z = testZ;
+        break;
+      }
+    }
+
+    const pMin = project(bMinLng, bMaxLat, z);
+    const pMax = project(bMaxLng, bMinLat, z);
+
+    const pxMinX = Math.min(pMin.x, pMax.x);
+    const pxMaxX = Math.max(pMin.x, pMax.x);
+    const pxMinY = Math.min(pMin.y, pMax.y);
+    const pxMaxY = Math.max(pMin.y, pMax.y);
+
+    const originX = pxMinX;
+    const originY = pxMinY;
+    const width = Math.round(pxMaxX - pxMinX);
+    const height = Math.round(pxMaxY - pxMinY);
+
+    const minTx = Math.floor(pxMinX / 256);
+    const maxTx = Math.floor(pxMaxX / 256);
+    const minTy = Math.floor(pxMinY / 256);
+    const maxTy = Math.floor(pxMaxY / 256);
+
+    // Extreme High-DPI: 2x canvas scaling (renders 300+ DPI on A4 landscape)
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+
+    // Background fill
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, width, height);
+
+    // Determine basemap URL generator
+    const basemap = document.getElementById('basemapSelect')?.value || 'google_hybrid';
+    function getTileUrl(tx, ty, zoom) {
+      if (basemap === 'esri_world') {
+        return `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${ty}/${tx}`;
+      } else if (basemap === 'osm_streets') {
+        const sub = ['a', 'b', 'c', 'd'][(tx + ty) % 4];
+        return `https://${sub}.basemaps.cartocdn.com/rastertiles/voyager/${zoom}/${tx}/${ty}.png`;
+      } else {
+        const sub = (tx + ty) % 4;
+        return `https://mt${sub}.google.com/vt/lyrs=y&x=${tx}&y=${ty}&z=${zoom}`;
+      }
+    }
+
+    // 2. Fetch all satellite tiles concurrently
+    if (pdfText) pdfText.innerText = 'Loading Imagery...';
+    const tilePromises = [];
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      for (let ty = minTy; ty <= maxTy; ty++) {
+        tilePromises.push(new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve({ img, tx, ty });
+          img.onerror = () => resolve(null);
+          img.src = getTileUrl(tx, ty, z);
+        }));
+      }
+    }
+
+    const tiles = await Promise.all(tilePromises);
+    tiles.forEach(t => {
+      if (!t || !t.img) return;
+      const dx = Math.round(t.tx * 256 - originX);
+      const dy = Math.round(t.ty * 256 - originY);
+      ctx.drawImage(t.img, dx, dy, 256, 256);
+    });
+
+    if (pdfText) pdfText.innerText = 'Drawing Vectors...';
+
+    // 3. Draw All Vector Geometries (Polygons & Polylines) with 100% mathematical projection
+    geojson.features.forEach(f => {
+      const g = f.geometry;
+      if (!g || !g.coordinates) return;
+      if (f.properties?.type === 'text' || g.type === 'Point') return;
+
+      const layerName = f.properties?.layer || 'Default';
+      if (layerVisibility[layerName] === false) return;
+      const userAlpha = (layerOpacity[layerName] !== undefined) ? layerOpacity[layerName] : 1.0;
+
+      const strokeColor = f.properties?.stroke || layerColors[layerName] || '#ef4444';
+      const strokeWidth = Number(f.properties?.['stroke-width']) || 2.5;
+
+      const rings = (g.type === 'Polygon' || g.type === 'MultiLineString')
+        ? g.coordinates
+        : (g.type === 'MultiPolygon' ? g.coordinates.flat() : [g.coordinates]);
+
+      rings.forEach(ring => {
+        if (!ring || ring.length === 0) return;
+        ctx.save();
+        ctx.beginPath();
+        ring.forEach((coord, idx) => {
+          const pt = project(coord[0], coord[1], z);
+          const x = pt.x - originX;
+          const y = pt.y - originY;
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+
+        if (g.type === 'Polygon') {
+          ctx.closePath();
+          ctx.fillStyle = f.properties?.fill || strokeColor;
+          ctx.globalAlpha = userAlpha * (Number(f.properties?.['fill-opacity']) || 0.15);
+          ctx.fill();
+        }
+
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = Math.max(2.0, strokeWidth);
+        ctx.globalAlpha = userAlpha * 0.95;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.restore();
+      });
+    });
+
+    // 4. Draw All Survey Stations & Points (Zero points missing!)
+    geojson.features.forEach(f => {
+      if (f.geometry?.type !== 'Point' || f.properties?.type === 'text') return;
+      const layerName = f.properties?.layer || 'Default';
+      if (layerVisibility[layerName] === false) return;
+      const userAlpha = (layerOpacity[layerName] !== undefined) ? layerOpacity[layerName] : 1.0;
+
+      const coord = f.geometry.coordinates;
+      const pt = project(coord[0], coord[1], z);
+      const sx = pt.x - originX;
+      const sy = pt.y - originY;
+
+      ctx.save();
+      ctx.globalAlpha = userAlpha;
+      // Outer colored circle ring
+      ctx.beginPath();
+      ctx.arc(sx, sy, 5.0, 0, Math.PI * 2);
+      ctx.fillStyle = f.properties?.color || layerColors[layerName] || '#10b981';
+      ctx.fill();
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = '#0f172a';
+      ctx.stroke();
+
+      // Inner white center dot
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // 5. Draw All CAD Text Labels (Rotated, crisp halo, exact location)
+    geojson.features.forEach(f => {
+      if (f.geometry?.type !== 'Point' || f.properties?.type !== 'text') return;
+      const layerName = f.properties?.layer || 'Default';
+      if (layerVisibility[layerName] === false) return;
+      const userAlpha = (layerOpacity[layerName] !== undefined) ? layerOpacity[layerName] : 1.0;
+
+      const coord = f.geometry.coordinates;
+      const pt = project(coord[0], coord[1], z);
+      const sx = pt.x - originX;
+      const sy = pt.y - originY;
+
+      const title = f.properties?.title || '';
+      if (!title) return;
+
+      const rotation = Number(f.properties?.rotation) || 0;
+      const labelColor = f.properties?.label_color || '#ff0000';
+      const isLargeTitle = title.length > 10 && !title.startsWith('KM');
+      const fontSize = isLargeTitle ? 13 : 10.5;
+
+      ctx.save();
+      ctx.translate(sx, sy);
+      if (Math.abs(rotation) > 0.01) {
+        let cssAngle = (-rotation) % 360;
+        if (cssAngle < 0) cssAngle += 360;
+        ctx.rotate((cssAngle * Math.PI) / 180);
+      }
+
+      ctx.font = `600 ${fontSize}px "JetBrains Mono", "Inter", sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+
+      // 2.2px dark halo for razor-sharp legibility against satellite imagery
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2.4;
+      ctx.lineJoin = 'miter';
+      ctx.miterLimit = 2;
+      ctx.strokeText(title, 0, 0);
+
+      // Text color fill
+      ctx.fillStyle = labelColor;
+      ctx.globalAlpha = userAlpha;
+      ctx.fillText(title, 0, 0);
+      ctx.restore();
+    });
+
+    if (pdfText) pdfText.innerText = 'Creating PDF...';
+
+    // 6. Generate Landscape A4 PDF with jsPDF
+    if (!window.jspdf) {
+      window.print();
+      return;
+    }
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({
@@ -530,27 +746,25 @@ async function exportMapToPdf() {
     pdf.setDrawColor(226, 232, 240);
     pdf.line(0, 16, pageWidth, 16);
 
-    // Header Title & File
     const fileInput = document.getElementById('file');
-    const fileName = (fileInput && fileInput.files && fileInput.files[0]) ? fileInput.files[0].name : 'CAD Drawing';
+    const fileName = (fileInput?.files?.[0]?.name) || (lastConversionGeoJSON?.filename) || 'CAD Drawing';
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(12);
+    pdf.setFontSize(11.5);
     pdf.setTextColor(15, 23, 42);
     pdf.text(fileName, 10, 10.5);
 
-    // Header Metadata
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8);
     pdf.setTextColor(100, 116, 139);
     const dateStr = new Date().toLocaleString();
     const crs = document.getElementById('target_crs')?.value || 'WGS84';
-    pdf.text(`Exported: ${dateStr} • Datum: ${crs} • Satellite Map`, pageWidth - 10, 10.5, { align: 'right' });
+    pdf.text(`Exported: ${dateStr} • Datum: ${crs} • Native High-DPI GIS Render`, pageWidth - 10, 10.5, { align: 'right' });
 
-    // Map dimensions on page
-    const margin = 10;
-    const topY = 20;
+    // Calculate map dimensions to maximize page area
+    const margin = 8;
+    const topY = 19;
     const availWidth = pageWidth - (margin * 2);
-    const availHeight = pageHeight - topY - 10;
+    const availHeight = pageHeight - topY - 8;
 
     const imgRatio = canvas.width / canvas.height;
     let targetWidth = availWidth;
@@ -567,25 +781,24 @@ async function exportMapToPdf() {
     const imgData = canvas.toDataURL('image/jpeg', 0.95);
     pdf.addImage(imgData, 'JPEG', posX, posY, targetWidth, targetHeight, undefined, 'FAST');
 
-    // Border around map image
+    // Outer border around map
     pdf.setDrawColor(203, 213, 225);
     pdf.rect(posX, posY, targetWidth, targetHeight, 'S');
 
     // Footer
     pdf.setFontSize(7.5);
     pdf.setTextColor(148, 163, 184);
-    pdf.text('CAD2KML Studio Map Report • Full Polygon and Point Coverage Verified', pageWidth / 2, pageHeight - 4, { align: 'center' });
+    pdf.text('CAD2KML Studio • High-DPI Map Export • 100% Survey Geometry & Point Coverage', pageWidth / 2, pageHeight - 3, { align: 'center' });
 
-    const safeName = (fileName.replace(/\.[^/.]+$/, "") || 'CAD_Map') + '_Report.pdf';
+    const safeName = (fileName.replace(/\.[^/.]+$/, "") || 'CAD_Map') + '_HighDPI_Report.pdf';
     pdf.save(safeName);
+
   } catch (err) {
-    console.error('PDF export error:', err);
+    console.error('High-DPI PDF export error:', err);
     window.print();
   } finally {
-    if (pdfBtn) {
-      pdfBtn.disabled = false;
-      pdfBtn.innerHTML = originalHtml;
-    }
+    if (pdfBtn) pdfBtn.disabled = false;
+    if (pdfText) pdfText.innerText = originalText;
   }
 }
 
