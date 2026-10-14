@@ -465,7 +465,8 @@ function initGlassDock() {
 
 const pdfExportState = {
   orientation: 'landscape', // 'landscape' | 'portrait'
-  zoomCoverage: 100,        // 70% (tighter) to 150% (wider)
+  zoomCoverage: 100,        // 30% (wide terrain overview) to 300% (close-up detail)
+  textSize: 100,            // 50% (compact) to 250% (bold/large)
   basemap: 'google_hybrid',
   showPolygons: true,
   showPoints: true,
@@ -528,7 +529,7 @@ function initPdfExportModal() {
     schedulePdfPreviewRender(50);
   });
 
-  // Zoom / Coverage Slider
+  // Zoom / Coverage Slider (30% to 300%)
   const zoomSlider = document.getElementById('pdfZoomSlider');
   const zoomVal = document.getElementById('pdfZoomVal');
   const zoomMinus = document.getElementById('pdfZoomMinus');
@@ -536,7 +537,7 @@ function initPdfExportModal() {
   const zoomReset = document.getElementById('pdfZoomReset');
 
   function updateZoom(val) {
-    const clamped = Math.max(70, Math.min(150, parseInt(val, 10) || 100));
+    const clamped = Math.max(30, Math.min(300, parseInt(val, 10) || 100));
     pdfExportState.zoomCoverage = clamped;
     if (zoomSlider) zoomSlider.value = clamped;
     if (zoomVal) zoomVal.innerText = `${clamped}%`;
@@ -544,9 +545,29 @@ function initPdfExportModal() {
   }
 
   zoomSlider?.addEventListener('input', (e) => updateZoom(e.target.value));
-  zoomMinus?.addEventListener('click', () => updateZoom(pdfExportState.zoomCoverage - 5));
-  zoomPlus?.addEventListener('click', () => updateZoom(pdfExportState.zoomCoverage + 5));
+  zoomMinus?.addEventListener('click', () => updateZoom((pdfExportState.zoomCoverage || 100) - 10));
+  zoomPlus?.addEventListener('click', () => updateZoom((pdfExportState.zoomCoverage || 100) + 10));
   zoomReset?.addEventListener('click', () => updateZoom(100));
+
+  // Text & Label Size Slider (50% to 250%)
+  const textSizeSlider = document.getElementById('pdfTextSizeSlider');
+  const textSizeVal = document.getElementById('pdfTextSizeVal');
+  const textSizeMinus = document.getElementById('pdfTextSizeMinus');
+  const textSizePlus = document.getElementById('pdfTextSizePlus');
+  const textSizeReset = document.getElementById('pdfTextSizeReset');
+
+  function updateTextSize(val) {
+    const clamped = Math.max(50, Math.min(250, parseInt(val, 10) || 100));
+    pdfExportState.textSize = clamped;
+    if (textSizeSlider) textSizeSlider.value = clamped;
+    if (textSizeVal) textSizeVal.innerText = `${clamped}%`;
+    schedulePdfPreviewRender(120);
+  }
+
+  textSizeSlider?.addEventListener('input', (e) => updateTextSize(e.target.value));
+  textSizeMinus?.addEventListener('click', () => updateTextSize((pdfExportState.textSize || 100) - 10));
+  textSizePlus?.addEventListener('click', () => updateTextSize((pdfExportState.textSize || 100) + 10));
+  textSizeReset?.addEventListener('click', () => updateTextSize(100));
 
   // Basemap Selector
   const basemapSelect = document.getElementById('pdfBasemapSelect');
@@ -601,6 +622,17 @@ function openPdfExportModal() {
   const crs = document.getElementById('target_crs')?.value || 'UTM 44N';
   const crsEl = document.getElementById('pdfSheetCrs');
   if (crsEl) crsEl.innerText = `Datum: WGS84 • ${crs}`;
+
+  // Sync sliders to current state
+  const zoomSlider = document.getElementById('pdfZoomSlider');
+  const zoomVal = document.getElementById('pdfZoomVal');
+  if (zoomSlider) zoomSlider.value = pdfExportState.zoomCoverage || 100;
+  if (zoomVal) zoomVal.innerText = `${pdfExportState.zoomCoverage || 100}%`;
+
+  const textSizeSlider = document.getElementById('pdfTextSizeSlider');
+  const textSizeVal = document.getElementById('pdfTextSizeVal');
+  if (textSizeSlider) textSizeSlider.value = pdfExportState.textSize || 100;
+  if (textSizeVal) textSizeVal.innerText = `${pdfExportState.textSize || 100}%`;
 
   // Match current map basemap selection
   const currentBasemap = document.getElementById('basemapSelect')?.value || 'google_hybrid';
@@ -695,35 +727,37 @@ async function renderPdfPreviewSheet(options = {}) {
       if (c[1] > maxLat) maxLat = c[1];
     });
 
-    // 2. Adjust margins and aspect ratio based on orientation & zoomCoverage slider
-    const coverageFactor = pdfExportState.zoomCoverage / 100;
-    const basePadLng = Math.max(0.001, (maxLng - minLng) * 0.12 * coverageFactor);
-    const basePadLat = Math.max(0.001, (maxLat - minLat) * 0.12 * coverageFactor);
-
-    let bMinLng = minLng - basePadLng;
-    let bMaxLng = maxLng + basePadLng;
-    let bMinLat = minLat - basePadLat;
-    let bMaxLat = maxLat + basePadLat;
+    // 2. Adjust margins, aspect ratio and zoom scale based on orientation & zoomCoverage slider
+    const midLng = (minLng + maxLng) / 2;
+    const midLat = (minLat + maxLat) / 2;
+    const baseSpanLng = Math.max(0.0015, (maxLng - minLng) * 1.16);
+    const baseSpanLat = Math.max(0.0015, (maxLat - minLat) * 1.16);
 
     // Adapt bounds to match sheet aspect ratio:
     // Landscape A4 frame aspect ~ 1.50. Portrait A4 frame aspect ~ 0.71
     const targetAspect = (pdfExportState.orientation === 'portrait') ? 0.71 : 1.50;
-    const spanLng = bMaxLng - bMinLng;
-    const spanLat = bMaxLat - bMinLat;
-    const midLng = (bMinLng + bMaxLng) / 2;
-    const midLat = (bMinLat + bMaxLat) / 2;
     const latRadMid = (midLat * Math.PI) / 180;
-    const currentAspect = (spanLng * Math.cos(latRadMid)) / spanLat;
+    const currentAspect = (baseSpanLng * Math.cos(latRadMid)) / baseSpanLat;
 
+    let fittedSpanLng = baseSpanLng;
+    let fittedSpanLat = baseSpanLat;
     if (currentAspect < targetAspect) {
-      const neededSpanLng = (spanLat * targetAspect) / Math.cos(latRadMid);
-      bMinLng = midLng - neededSpanLng / 2;
-      bMaxLng = midLng + neededSpanLng / 2;
+      fittedSpanLng = (baseSpanLat * targetAspect) / Math.cos(latRadMid);
     } else {
-      const neededSpanLat = (spanLng * Math.cos(latRadMid)) / targetAspect;
-      bMinLat = midLat - neededSpanLat / 2;
-      bMaxLat = midLat + neededSpanLat / 2;
+      fittedSpanLat = (baseSpanLng * Math.cos(latRadMid)) / targetAspect;
     }
+
+    // zoomCoverage: 100% = normal fitted frame.
+    // > 100% = Zoom In (e.g. 200% magnifies 2x, smaller span).
+    // < 100% = Zoom Out (e.g. 50% shows 2x wider area, larger span).
+    const zoomScale = Math.max(0.3, Math.min(3.0, (pdfExportState.zoomCoverage || 100) / 100));
+    const effectiveSpanLng = fittedSpanLng / zoomScale;
+    const effectiveSpanLat = fittedSpanLat / zoomScale;
+
+    const bMinLng = midLng - effectiveSpanLng / 2;
+    const bMaxLng = midLng + effectiveSpanLng / 2;
+    const bMinLat = midLat - effectiveSpanLat / 2;
+    const bMaxLat = midLat + effectiveSpanLat / 2;
 
     // Web Mercator projection matching satellite tiles exactly
     function project(lng, lat, zoom) {
@@ -736,13 +770,22 @@ async function renderPdfPreviewSheet(options = {}) {
 
     // 3. Optimal High-DPI zoom calculation
     let z = 16;
-    for (let testZ = 13; testZ <= 18; testZ++) {
+    for (let testZ = 9; testZ <= 20; testZ++) {
       const p1 = project(bMinLng, bMinLat, testZ);
       const p2 = project(bMaxLng, bMaxLat, testZ);
       const spanW = Math.abs(p2.x - p1.x);
       const spanH = Math.abs(p1.y - p2.y);
-      if (spanW >= 850 || spanH >= 850 || testZ === 17) {
-        z = testZ;
+      const minTx = Math.floor(Math.min(p1.x, p2.x) / 256);
+      const maxTx = Math.floor(Math.max(p1.x, p2.x) / 256);
+      const minTy = Math.floor(Math.min(p1.y, p2.y) / 256);
+      const maxTy = Math.floor(Math.max(p1.y, p2.y) / 256);
+      const tileCount = (maxTx - minTx + 1) * (maxTy - minTy + 1);
+
+      if (tileCount > 36 && testZ > 12) {
+        break;
+      }
+      z = testZ;
+      if (spanW >= 950 || spanH >= 950) {
         break;
       }
     }
@@ -864,6 +907,9 @@ async function renderPdfPreviewSheet(options = {}) {
 
     // 6. Draw Survey Points
     if (pdfExportState.showPoints) {
+      const textScale = Math.max(0.5, Math.min(2.5, (pdfExportState.textSize || 100) / 100));
+      const ptRadius = Math.max(2.5, 4.5 * Math.min(1.4, Math.max(0.8, textScale)));
+
       geojson.features.forEach(f => {
         if (f.geometry?.type !== 'Point' || f.properties?.type === 'text') return;
         const layerName = f.properties?.layer || 'Default';
@@ -878,15 +924,15 @@ async function renderPdfPreviewSheet(options = {}) {
         ctx.save();
         ctx.globalAlpha = userAlpha;
         ctx.beginPath();
-        ctx.arc(sx, sy, 5.0, 0, Math.PI * 2);
+        ctx.arc(sx, sy, ptRadius, 0, Math.PI * 2);
         ctx.fillStyle = f.properties?.color || layerColors[layerName] || '#10b981';
         ctx.fill();
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = Math.max(1.2, 1.6 * textScale * 0.7);
         ctx.strokeStyle = '#0f172a';
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+        ctx.arc(sx, sy, Math.max(1.0, ptRadius * 0.32), 0, Math.PI * 2);
         ctx.fillStyle = '#ffffff';
         ctx.fill();
         ctx.restore();
@@ -895,6 +941,8 @@ async function renderPdfPreviewSheet(options = {}) {
 
     // 7. Draw CAD Text Labels with proper AutoCAD anchor alignment & halo
     if (pdfExportState.showLabels) {
+      const textScale = Math.max(0.5, Math.min(2.5, (pdfExportState.textSize || 100) / 100));
+
       geojson.features.forEach(f => {
         if (f.geometry?.type !== 'Point' || f.properties?.type !== 'text') return;
         const layerName = f.properties?.layer || 'Default';
@@ -912,7 +960,8 @@ async function renderPdfPreviewSheet(options = {}) {
         const rotation = Number(f.properties?.rotation) || 0;
         const labelColor = f.properties?.label_color || '#ff0000';
         const isLargeTitle = (title.length > 8 && !title.startsWith('KM')) || title.includes('RESERVOIR');
-        const fontSize = isLargeTitle ? 14 : 10.5;
+        const baseFontSize = isLargeTitle ? 14 : 10.5;
+        const fontSize = Math.max(6, Math.round(baseFontSize * textScale));
 
         ctx.save();
         ctx.translate(sx, sy);
@@ -948,9 +997,9 @@ async function renderPdfPreviewSheet(options = {}) {
           ctx.textBaseline = 'middle';
         }
 
-        // 2.6px dark halo for contrast against satellite imagery
+        // Halo for contrast against satellite imagery
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = isLargeTitle ? 3.4 : 2.4;
+        ctx.lineWidth = Math.max(1.8, (isLargeTitle ? 3.4 : 2.4) * textScale);
         ctx.lineJoin = 'miter';
         ctx.miterLimit = 2;
         ctx.strokeText(title, 0, 0);

@@ -644,16 +644,31 @@
           <!-- Coverage / Zoom Slider -->
           <div class="pdf-control-group">
             <div class="pdf-slider-header">
-              <label class="pdf-control-label" for="pdfZoomSlider">Zoom &amp; Margin Coverage</label>
+              <label class="pdf-control-label" for="pdfZoomSlider">Map Zoom Level</label>
               <span class="pdf-slider-badge" id="pdfZoomVal">100%</span>
             </div>
             <div class="pdf-slider-row">
-              <button type="button" class="pdf-step-btn" id="pdfZoomMinus" title="Zoom In (tighter margin)">−</button>
-              <input type="range" id="pdfZoomSlider" min="70" max="150" value="100" step="5" class="pdf-range-input">
-              <button type="button" class="pdf-step-btn" id="pdfZoomPlus" title="Zoom Out (wider margin)">+</button>
+              <button type="button" class="pdf-step-btn" id="pdfZoomMinus" title="Zoom Out (wider area)">−</button>
+              <input type="range" id="pdfZoomSlider" min="30" max="300" value="100" step="5" class="pdf-range-input">
+              <button type="button" class="pdf-step-btn" id="pdfZoomPlus" title="Zoom In (close-up detail)">+</button>
               <button type="button" class="pdf-reset-btn" id="pdfZoomReset" title="Reset to 100%">Reset</button>
             </div>
-            <div class="pdf-control-hint">Adjust margin padding around the boundary and title.</div>
+            <div class="pdf-control-hint">Zoom in for close-up detail or out for full landscape context.</div>
+          </div>
+
+          <!-- Text Size Slider -->
+          <div class="pdf-control-group">
+            <div class="pdf-slider-header">
+              <label class="pdf-control-label" for="pdfTextSizeSlider">Text &amp; Label Size</label>
+              <span class="pdf-slider-badge" id="pdfTextSizeVal">100%</span>
+            </div>
+            <div class="pdf-slider-row">
+              <button type="button" class="pdf-step-btn" id="pdfTextSizeMinus" title="Decrease font size">−</button>
+              <input type="range" id="pdfTextSizeSlider" min="50" max="250" value="100" step="5" class="pdf-range-input">
+              <button type="button" class="pdf-step-btn" id="pdfTextSizePlus" title="Increase font size">+</button>
+              <button type="button" class="pdf-reset-btn" id="pdfTextSizeReset" title="Reset to 100%">Reset</button>
+            </div>
+            <div class="pdf-control-hint">Scale chainage text, survey stations, and drawing title.</div>
           </div>
 
           <!-- Basemap Imagery Selector -->

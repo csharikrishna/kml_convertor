@@ -479,16 +479,31 @@
           <!-- Coverage / Zoom Slider -->
           <div class="pdf-control-group">
             <div class="pdf-slider-header">
-              <label class="pdf-control-label" for="pdfZoomSlider">Zoom &amp; Margin Coverage</label>
+              <label class="pdf-control-label" for="pdfZoomSlider">Map Zoom Level</label>
               <span class="pdf-slider-badge" id="pdfZoomVal">100%</span>
             </div>
             <div class="pdf-slider-row">
-              <button type="button" class="pdf-step-btn" id="pdfZoomMinus" title="Zoom In (tighter margin)">−</button>
-              <input type="range" id="pdfZoomSlider" min="70" max="150" value="100" step="5" class="pdf-range-input">
-              <button type="button" class="pdf-step-btn" id="pdfZoomPlus" title="Zoom Out (wider margin)">+</button>
+              <button type="button" class="pdf-step-btn" id="pdfZoomMinus" title="Zoom Out (wider area)">−</button>
+              <input type="range" id="pdfZoomSlider" min="30" max="300" value="100" step="5" class="pdf-range-input">
+              <button type="button" class="pdf-step-btn" id="pdfZoomPlus" title="Zoom In (close-up detail)">+</button>
               <button type="button" class="pdf-reset-btn" id="pdfZoomReset" title="Reset to 100%">Reset</button>
             </div>
-            <div class="pdf-control-hint">Adjust margin padding around the boundary and title.</div>
+            <div class="pdf-control-hint">Zoom in for close-up detail or out for full landscape context.</div>
+          </div>
+
+          <!-- Text Size Slider -->
+          <div class="pdf-control-group">
+            <div class="pdf-slider-header">
+              <label class="pdf-control-label" for="pdfTextSizeSlider">Text &amp; Label Size</label>
+              <span class="pdf-slider-badge" id="pdfTextSizeVal">100%</span>
+            </div>
+            <div class="pdf-slider-row">
+              <button type="button" class="pdf-step-btn" id="pdfTextSizeMinus" title="Decrease font size">−</button>
+              <input type="range" id="pdfTextSizeSlider" min="50" max="250" value="100" step="5" class="pdf-range-input">
+              <button type="button" class="pdf-step-btn" id="pdfTextSizePlus" title="Increase font size">+</button>
+              <button type="button" class="pdf-reset-btn" id="pdfTextSizeReset" title="Reset to 100%">Reset</button>
+            </div>
+            <div class="pdf-control-hint">Scale chainage text, survey stations, and drawing title.</div>
           </div>
 
           <!-- Basemap Imagery Selector -->
@@ -1025,7 +1040,8 @@
 
     const pdfExportState = {
       orientation: 'landscape', // 'landscape' | 'portrait'
-      zoomCoverage: 100,        // 70% (tighter) to 150% (wider)
+      zoomCoverage: 100,        // 30% (wide terrain overview) to 300% (close-up detail)
+      textSize: 100,            // 50% (compact) to 250% (bold/large)
       basemap: 'google_hybrid',
       showPolygons: true,
       showPoints: true,
@@ -1086,7 +1102,7 @@
         schedulePdfPreviewRender(50);
       });
 
-      // Zoom / Coverage Slider
+      // Zoom / Coverage Slider (30% to 300%)
       const zoomSlider = document.getElementById('pdfZoomSlider');
       const zoomVal = document.getElementById('pdfZoomVal');
       const zoomMinus = document.getElementById('pdfZoomMinus');
@@ -1094,7 +1110,7 @@
       const zoomReset = document.getElementById('pdfZoomReset');
 
       function updateZoom(val) {
-        const clamped = Math.max(70, Math.min(150, parseInt(val, 10) || 100));
+        const clamped = Math.max(30, Math.min(300, parseInt(val, 10) || 100));
         pdfExportState.zoomCoverage = clamped;
         if (zoomSlider) zoomSlider.value = clamped;
         if (zoomVal) zoomVal.innerText = `${clamped}%`;
@@ -1102,9 +1118,29 @@
       }
 
       zoomSlider?.addEventListener('input', (e) => updateZoom(e.target.value));
-      zoomMinus?.addEventListener('click', () => updateZoom(pdfExportState.zoomCoverage - 5));
-      zoomPlus?.addEventListener('click', () => updateZoom(pdfExportState.zoomCoverage + 5));
+      zoomMinus?.addEventListener('click', () => updateZoom((pdfExportState.zoomCoverage || 100) - 10));
+      zoomPlus?.addEventListener('click', () => updateZoom((pdfExportState.zoomCoverage || 100) + 10));
       zoomReset?.addEventListener('click', () => updateZoom(100));
+
+      // Text & Label Size Slider (50% to 250%)
+      const textSizeSlider = document.getElementById('pdfTextSizeSlider');
+      const textSizeVal = document.getElementById('pdfTextSizeVal');
+      const textSizeMinus = document.getElementById('pdfTextSizeMinus');
+      const textSizePlus = document.getElementById('pdfTextSizePlus');
+      const textSizeReset = document.getElementById('pdfTextSizeReset');
+
+      function updateTextSize(val) {
+        const clamped = Math.max(50, Math.min(250, parseInt(val, 10) || 100));
+        pdfExportState.textSize = clamped;
+        if (textSizeSlider) textSizeSlider.value = clamped;
+        if (textSizeVal) textSizeVal.innerText = `${clamped}%`;
+        schedulePdfPreviewRender(120);
+      }
+
+      textSizeSlider?.addEventListener('input', (e) => updateTextSize(e.target.value));
+      textSizeMinus?.addEventListener('click', () => updateTextSize((pdfExportState.textSize || 100) - 10));
+      textSizePlus?.addEventListener('click', () => updateTextSize((pdfExportState.textSize || 100) + 10));
+      textSizeReset?.addEventListener('click', () => updateTextSize(100));
 
       // Basemap Selector
       const basemapSelect = document.getElementById('pdfBasemapSelect');
@@ -1155,6 +1191,17 @@
 
       const crsEl = document.getElementById('pdfSheetCrs');
       if (crsEl) crsEl.innerText = 'Datum: WGS84 • Shared CAD Project';
+
+      // Sync sliders to current state
+      const zoomSlider = document.getElementById('pdfZoomSlider');
+      const zoomVal = document.getElementById('pdfZoomVal');
+      if (zoomSlider) zoomSlider.value = pdfExportState.zoomCoverage || 100;
+      if (zoomVal) zoomVal.innerText = `${pdfExportState.zoomCoverage || 100}%`;
+
+      const textSizeSlider = document.getElementById('pdfTextSizeSlider');
+      const textSizeVal = document.getElementById('pdfTextSizeVal');
+      if (textSizeSlider) textSizeSlider.value = pdfExportState.textSize || 100;
+      if (textSizeVal) textSizeVal.innerText = `${pdfExportState.textSize || 100}%`;
 
       const currentBasemap = document.getElementById('basemapSelect')?.value || 'google_hybrid';
       pdfExportState.basemap = currentBasemap;
@@ -1243,32 +1290,37 @@
           if (c[1] > maxLat) maxLat = c[1];
         });
 
-        const coverageFactor = pdfExportState.zoomCoverage / 100;
-        const basePadLng = Math.max(0.001, (maxLng - minLng) * 0.12 * coverageFactor);
-        const basePadLat = Math.max(0.001, (maxLat - minLat) * 0.12 * coverageFactor);
+        // Adjust margins, aspect ratio and zoom scale based on orientation & zoomCoverage slider
+        const midLng = (minLng + maxLng) / 2;
+        const midLat = (minLat + maxLat) / 2;
+        const baseSpanLng = Math.max(0.0015, (maxLng - minLng) * 1.16);
+        const baseSpanLat = Math.max(0.0015, (maxLat - minLat) * 1.16);
 
-        let bMinLng = minLng - basePadLng;
-        let bMaxLng = maxLng + basePadLng;
-        let bMinLat = minLat - basePadLat;
-        let bMaxLat = maxLat + basePadLat;
-
+        // Adapt bounds to match sheet aspect ratio:
+        // Landscape A4 frame aspect ~ 1.50. Portrait A4 frame aspect ~ 0.71
         const targetAspect = (pdfExportState.orientation === 'portrait') ? 0.71 : 1.50;
-        const spanLng = bMaxLng - bMinLng;
-        const spanLat = bMaxLat - bMinLat;
-        const midLng = (bMinLng + bMaxLng) / 2;
-        const midLat = (bMinLat + bMaxLat) / 2;
         const latRadMid = (midLat * Math.PI) / 180;
-        const currentAspect = (spanLng * Math.cos(latRadMid)) / spanLat;
+        const currentAspect = (baseSpanLng * Math.cos(latRadMid)) / baseSpanLat;
 
+        let fittedSpanLng = baseSpanLng;
+        let fittedSpanLat = baseSpanLat;
         if (currentAspect < targetAspect) {
-          const neededSpanLng = (spanLat * targetAspect) / Math.cos(latRadMid);
-          bMinLng = midLng - neededSpanLng / 2;
-          bMaxLng = midLng + neededSpanLng / 2;
+          fittedSpanLng = (baseSpanLat * targetAspect) / Math.cos(latRadMid);
         } else {
-          const neededSpanLat = (spanLng * Math.cos(latRadMid)) / targetAspect;
-          bMinLat = midLat - neededSpanLat / 2;
-          bMaxLat = midLat + neededSpanLat / 2;
+          fittedSpanLat = (baseSpanLng * Math.cos(latRadMid)) / targetAspect;
         }
+
+        // zoomCoverage: 100% = normal fitted frame.
+        // > 100% = Zoom In (e.g. 200% magnifies 2x, smaller span).
+        // < 100% = Zoom Out (e.g. 50% shows 2x wider area, larger span).
+        const zoomScale = Math.max(0.3, Math.min(3.0, (pdfExportState.zoomCoverage || 100) / 100));
+        const effectiveSpanLng = fittedSpanLng / zoomScale;
+        const effectiveSpanLat = fittedSpanLat / zoomScale;
+
+        const bMinLng = midLng - effectiveSpanLng / 2;
+        const bMaxLng = midLng + effectiveSpanLng / 2;
+        const bMinLat = midLat - effectiveSpanLat / 2;
+        const bMaxLat = midLat + effectiveSpanLat / 2;
 
         function project(lng, lat, zoom) {
           const n = Math.pow(2, zoom);
@@ -1279,13 +1331,22 @@
         }
 
         let z = 16;
-        for (let testZ = 13; testZ <= 18; testZ++) {
+        for (let testZ = 9; testZ <= 20; testZ++) {
           const p1 = project(bMinLng, bMinLat, testZ);
           const p2 = project(bMaxLng, bMaxLat, testZ);
           const spanW = Math.abs(p2.x - p1.x);
           const spanH = Math.abs(p1.y - p2.y);
-          if (spanW >= 850 || spanH >= 850 || testZ === 17) {
-            z = testZ;
+          const minTx = Math.floor(Math.min(p1.x, p2.x) / 256);
+          const maxTx = Math.floor(Math.max(p1.x, p2.x) / 256);
+          const minTy = Math.floor(Math.min(p1.y, p2.y) / 256);
+          const maxTy = Math.floor(Math.max(p1.y, p2.y) / 256);
+          const tileCount = (maxTx - minTx + 1) * (maxTy - minTy + 1);
+
+          if (tileCount > 36 && testZ > 12) {
+            break;
+          }
+          z = testZ;
+          if (spanW >= 950 || spanH >= 950) {
             break;
           }
         }
@@ -1403,6 +1464,9 @@
         }
 
         if (pdfExportState.showPoints) {
+          const textScale = Math.max(0.5, Math.min(2.5, (pdfExportState.textSize || 100) / 100));
+          const ptRadius = Math.max(2.5, 4.5 * Math.min(1.4, Math.max(0.8, textScale)));
+
           geojson.features.forEach(f => {
             if (f.geometry?.type !== 'Point' || f.properties?.type === 'text') return;
             const layerName = f.properties?.layer || 'Default';
@@ -1417,15 +1481,15 @@
             ctx.save();
             ctx.globalAlpha = userAlpha;
             ctx.beginPath();
-            ctx.arc(sx, sy, 5.0, 0, Math.PI * 2);
+            ctx.arc(sx, sy, ptRadius, 0, Math.PI * 2);
             ctx.fillStyle = f.properties?.color || layerColors[layerName] || '#10b981';
             ctx.fill();
-            ctx.lineWidth = 1.6;
+            ctx.lineWidth = Math.max(1.2, 1.6 * textScale * 0.7);
             ctx.strokeStyle = '#0f172a';
             ctx.stroke();
 
             ctx.beginPath();
-            ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+            ctx.arc(sx, sy, Math.max(1.0, ptRadius * 0.32), 0, Math.PI * 2);
             ctx.fillStyle = '#ffffff';
             ctx.fill();
             ctx.restore();
@@ -1433,6 +1497,7 @@
         }
 
         if (pdfExportState.showLabels) {
+          const textScale = Math.max(0.5, Math.min(2.5, (pdfExportState.textSize || 100) / 100));
           geojson.features.forEach(f => {
             if (f.geometry?.type !== 'Point' || f.properties?.type !== 'text') return;
             const layerName = f.properties?.layer || 'Default';
@@ -1450,7 +1515,8 @@
             const rotation = Number(f.properties?.rotation) || 0;
             const labelColor = f.properties?.label_color || '#ff0000';
             const isLargeTitle = (title.length > 8 && !title.startsWith('KM')) || title.includes('RESERVOIR');
-            const fontSize = isLargeTitle ? 14 : 10.5;
+            const baseFontSize = isLargeTitle ? 14 : 10.5;
+            const fontSize = Math.max(6, Math.round(baseFontSize * textScale));
 
             ctx.save();
             ctx.translate(sx, sy);
@@ -1483,7 +1549,7 @@
             }
 
             ctx.strokeStyle = '#000000';
-            ctx.lineWidth = isLargeTitle ? 3.4 : 2.4;
+            ctx.lineWidth = Math.max(1.8, (isLargeTitle ? 3.4 : 2.4) * textScale);
             ctx.lineJoin = 'miter';
             ctx.miterLimit = 2;
             ctx.strokeText(title, 0, 0);
