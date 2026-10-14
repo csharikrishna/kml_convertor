@@ -422,6 +422,23 @@ function toggleFullscreen() {
     text.innerText = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen';
   }
 
+  // Attempt native fullscreen mode as enhancement
+  if (isFullscreen) {
+    const el = document.documentElement;
+    const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (rfs) {
+      try { const p = rfs.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+    }
+  } else {
+    const isNativeFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+    if (isNativeFs) {
+      const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+      if (efs) {
+        try { const p = efs.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+      }
+    }
+  }
+
   // Multi-pass invalidation to guarantee full tile grid coverage
   if (map) {
     map.invalidateSize();

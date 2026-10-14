@@ -165,6 +165,14 @@
       position: relative;
       width: 100%;
       height: calc(100vh - 54px);
+      transition: height 0.2s ease;
+    }
+    /* Immersive Pure-Map Fullscreen Workstation Mode */
+    body.fullscreen-immersive .share-header {
+      display: none !important;
+    }
+    body.fullscreen-immersive .share-map-wrapper {
+      height: 100vh !important;
     }
     #shareMap {
       width: 100%;
@@ -405,23 +413,28 @@
       window.addEventListener('resize', () => {
         if (map) map.invalidateSize();
       });
-      document.addEventListener('fullscreenchange', () => {
-        const svg = document.getElementById('fullscreenIconSvg');
-        const text = document.getElementById('fullscreenText');
-        const isFs = !!document.fullscreenElement;
-        if (svg) {
-          svg.innerHTML = isFs
-            ? '<polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line>'
-            : '<polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line>';
-        }
-        if (text) {
-          text.innerText = isFs ? 'Exit Fullscreen' : 'Fullscreen';
+      const syncFullscreenState = () => {
+        const isNativeFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+        if (!isNativeFs && isFullscreenMode) {
+          isFullscreenMode = false;
+          document.body.classList.remove('fullscreen-immersive');
+          const svg = document.getElementById('fullscreenIconSvg');
+          const text = document.getElementById('fullscreenText');
+          if (svg) {
+            svg.innerHTML = '<polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line>';
+          }
+          if (text) {
+            text.innerText = 'Fullscreen';
+          }
         }
         if (map) {
           map.invalidateSize();
-          setTimeout(() => map.invalidateSize(), 100);
-          setTimeout(() => map.invalidateSize(), 300);
+          setTimeout(() => map.invalidateSize(), 60);
+          setTimeout(() => map.invalidateSize(), 200);
         }
+      };
+      ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evt => {
+        document.addEventListener(evt, syncFullscreenState);
       });
 
       map.on('mousemove', onMapMouseMove);
@@ -746,6 +759,11 @@
       document.getElementById('measureClearBtn')?.addEventListener('click', clearMeasurement);
       document.getElementById('measureFinishBtn')?.addEventListener('click', toggleMeasurement);
       document.getElementById('fullscreenBtn')?.addEventListener('click', toggleFullscreen);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isFullscreenMode) {
+          toggleFullscreen();
+        }
+      });
 
       // Search box
       const sInput = document.getElementById('mapSearchInput');
@@ -819,16 +837,52 @@
       if (valEl) valEl.innerText = '0.0 m';
     }
 
+    let isFullscreenMode = false;
+
     function toggleFullscreen() {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
+      isFullscreenMode = !isFullscreenMode;
+      document.body.classList.toggle('fullscreen-immersive', isFullscreenMode);
+
+      const svg = document.getElementById('fullscreenIconSvg');
+      const text = document.getElementById('fullscreenText');
+
+      if (isFullscreenMode) {
+        // Attempt browser native fullscreen if available
+        const el = document.documentElement;
+        const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+        if (rfs) {
+          try {
+            const p = rfs.call(el);
+            if (p && p.catch) p.catch(() => {});
+          } catch (e) {}
+        }
+        if (svg) {
+          svg.innerHTML = '<polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line>';
+        }
+        if (text) text.innerText = 'Exit Fullscreen';
       } else {
-        document.exitFullscreen().catch(() => {});
+        // Exit native browser fullscreen if active
+        const isNativeFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+        if (isNativeFs) {
+          const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+          if (efs) {
+            try {
+              const p = efs.call(document);
+              if (p && p.catch) p.catch(() => {});
+            } catch (e) {}
+          }
+        }
+        if (svg) {
+          svg.innerHTML = '<polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line>';
+        }
+        if (text) text.innerText = 'Fullscreen';
       }
+
       if (map) {
         map.invalidateSize();
         requestAnimationFrame(() => map.invalidateSize());
-        setTimeout(() => map.invalidateSize(), 100);
+        setTimeout(() => map.invalidateSize(), 50);
+        setTimeout(() => map.invalidateSize(), 150);
         setTimeout(() => map.invalidateSize(), 300);
       }
     }
