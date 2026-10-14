@@ -12,7 +12,7 @@
   <!-- Google Fonts & Leaflet CSS -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 </head>
@@ -346,26 +346,50 @@
           <!-- Floating Frosted Glass Dock -->
           <div class="floating-glass-dock" id="glassDock">
             <div class="glass-search-box">
-              <input type="text" id="mapSearchInput" class="glass-search-input" placeholder="Search location (e.g. Kurnool, Hyderabad, London)...">
-              <button type="button" class="glass-search-btn" id="mapSearchBtn">Search</button>
+              <div class="search-icon-wrapper">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+              <input type="text" id="mapSearchInput" class="glass-search-input" placeholder="Search coordinates, cities, landmarks...">
+              <button type="button" class="glass-search-btn" id="mapSearchBtn">
+                <span>Search</span>
+                <kbd class="kbd-hint">↵</kbd>
+              </button>
             </div>
+
+            <div class="dock-separator"></div>
 
             <div class="glass-dock-actions">
               <!-- Fit Bounds -->
               <button type="button" class="glass-dock-btn" id="fitBoundsBtn" title="Fit to Drawing Extents">
-                <span>⛶</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
                 <span>Fit Drawing</span>
               </button>
 
               <!-- Measurement Tool -->
               <button type="button" class="glass-dock-btn" id="measureBtn" title="Measure Distance & Area">
-                <span>📏</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.3 8.7 8.7 21.3a2.12 2.12 0 0 1-3 0L2.7 18.3a2.12 2.12 0 0 1 0-3L15.3 2.7a2.12 2.12 0 0 1 3 0l3 3a2.12 2.12 0 0 1 0 3Z"></path>
+                  <path d="m14.5 3.5 2 2"></path>
+                  <path d="m11.5 6.5 2 2"></path>
+                  <path d="m8.5 9.5 2 2"></path>
+                  <path d="m5.5 12.5 2 2"></path>
+                </svg>
                 <span>Measure</span>
               </button>
 
               <!-- Fullscreen Mode Toggle -->
               <button type="button" class="glass-dock-btn" id="fullscreenBtn" title="Toggle Fullscreen Map Workstation">
-                <span id="fullscreenIcon">🗖</span>
+                <svg id="fullscreenIconSvg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <polyline points="9 21 3 21 3 15"></polyline>
+                  <line x1="21" y1="3" x2="14" y2="10"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
                 <span id="fullscreenText">Fullscreen</span>
               </button>
             </div>
@@ -408,11 +432,23 @@
           <!-- Enhanced Layer Management Panel -->
           <div class="layer-panel" id="layerPanel" style="display:none;">
             <div class="layer-panel-header">
-              <span>📂 Drawing Layers</span>
+              <div class="layer-panel-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                  <polyline points="2 17 12 22 22 17"></polyline>
+                  <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+                <span>CAD Layers</span>
+              </div>
               <div class="layer-quick-actions">
                 <button type="button" class="layer-quick-btn" id="layerAllOnBtn" title="Show all layers">All</button>
+                <span class="sep">/</span>
                 <button type="button" class="layer-quick-btn" id="layerAllOffBtn" title="Hide all layers">None</button>
-                <button type="button" class="layer-panel-toggle" id="layerPanelToggle" title="Toggle panel">−</button>
+                <button type="button" class="layer-panel-toggle" id="layerPanelToggle" title="Toggle panel">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
               </div>
             </div>
             <div class="layer-panel-body" id="layerPanelBody"></div>
@@ -421,12 +457,24 @@
           <!-- Live Coordinate Status Bar -->
           <div class="map-status-bar" id="mapStatusBar">
             <div class="map-status-left">
-              <span>Coordinates: <span class="map-status-val" id="statusCoords">--</span></span>
-              <span>UTM: <span class="map-status-val" id="statusUtm">--</span></span>
+              <span class="telemetry-pill">
+                <span class="telemetry-label">COORD</span>
+                <span class="map-status-val" id="statusCoords">--</span>
+              </span>
+              <span class="telemetry-pill">
+                <span class="telemetry-label">UTM</span>
+                <span class="map-status-val" id="statusUtm">--</span>
+              </span>
             </div>
             <div class="map-status-right">
-              <span>Zoom: <span class="map-status-val" id="statusZoom">--</span></span>
-              <span>CRS: <span class="map-status-val" id="statusCrs">EPSG:32644</span></span>
+              <span class="telemetry-pill">
+                <span class="telemetry-label">ZOOM</span>
+                <span class="map-status-val" id="statusZoom">--</span>
+              </span>
+              <span class="telemetry-pill">
+                <span class="telemetry-label">CRS</span>
+                <span class="map-status-val" id="statusCrs">EPSG:32644</span>
+              </span>
             </div>
           </div>
 
