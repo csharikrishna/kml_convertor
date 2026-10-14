@@ -15,13 +15,14 @@
 FROM python:3.12-slim-bookworm AS base
 
 ARG INSTALL_ODA=1
-ARG ODA_DEB=ODAFileConverter_QT6_lnxX64_8.3dll_27.1.deb
-ARG ODA_SHA256=c71363cd54758177af47a365154f180dc50a1e2b52a131994fda541c13a36766
+ARG ODA_DEB=ODAFileConverter_QT6_lnxX64_11dll.deb
+ARG ODA_SHA256=12f5e14c55c35176062f63e242d5390f732722213dd685fa3cd44a6555384cd0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
     PYTHONPATH=/app \
     DXF2KML_TEMP_DIR=/tmp/dxf2kml_web \
     PORT=8000
@@ -40,6 +41,7 @@ RUN set -eux; \
             libxkbcommon-x11-0 libxcb1 libxcb-cursor0 libxcb-glx0 libxcb-icccm4 libxcb-image0 \
             libxcb-keysyms1 libxcb-randr0 libxcb-render0 libxcb-render-util0 libxcb-shape0 \
             libxcb-shm0 libxcb-sync1 libxcb-util1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1; \
+        ln -sf /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0 || true; \
         if [ -f "/tmp/deps/${ODA_DEB}" ]; then cp "/tmp/deps/${ODA_DEB}" /tmp/oda.deb; \
         else curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors -A "Mozilla/5.0 (X11; Linux x86_64)" -o /tmp/oda.deb "https://www.opendesign.com/guestfiles/get?filename=${ODA_DEB}"; fi; \
         echo "${ODA_SHA256}  /tmp/oda.deb" | sha256sum -c -; \
@@ -52,7 +54,7 @@ RUN set -eux; \
     rm -rf /tmp/deps
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --default-timeout=120 --retries 5 -r requirements.txt
 
 COPY dxf2kml/ dxf2kml/
 COPY web_app/ web_app/
@@ -68,7 +70,7 @@ RUN useradd --create-home --uid 10001 appuser \
 FROM base AS test
 USER root
 COPY requirements-dev.txt .
-RUN pip install -r requirements-dev.txt
+RUN pip install --default-timeout=120 --retries 5 -r requirements-dev.txt
 COPY tests/ tests/
 COPY examples/ examples/
 COPY benchmarks/ benchmarks/
