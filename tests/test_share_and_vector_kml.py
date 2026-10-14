@@ -83,6 +83,8 @@ def test_screen_label_kml_export():
     assert "trans.png" in kml_text
     assert "<LabelStyle>" in kml_text
     assert "</LabelStyle>" in kml_text
+    assert "<LabelStyle><scale>0</scale></LabelStyle>" not in kml_text
+    assert "<scale>1." in kml_text
 
 
 def test_temporary_share_link_lifecycle():

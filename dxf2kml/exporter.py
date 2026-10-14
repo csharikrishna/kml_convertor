@@ -381,10 +381,16 @@ class KMLExporter:
             add(g.layer, "geom", g, self._geometry_style(g))
         for pt in self._points:
             add(pt.layer, "point", pt, self._point_style(pt))
+        text_mode = getattr(self.config, "kml_text_mode", "screen")
         for lbl in self._labels:
-            if self.config.export_vector_text and lbl.height > 0:
+            if text_mode == "vector" and lbl.height > 0:
                 vector_style = self.style_manager.get_vector_label_style(self._label_color(lbl)[0])
                 add(lbl.layer, "label", lbl, vector_style)
+            elif text_mode == "both" and lbl.height > 0:
+                both_style = self.style_manager.get_hybrid_label_style(
+                    self._label_color(lbl)[0], self._calculate_label_scale(lbl.height)
+                )
+                add(lbl.layer, "label", lbl, both_style)
             else:
                 add(lbl.layer, "label", lbl, self._label_style(lbl))
 

@@ -147,8 +147,26 @@ class StyleManager:
         scale = self.config.default_label_scale if label_scale is None else label_scale
         return self._get(
             ("label", kml_color, scale),
-            icon_href="http://maps.google.com/mapfiles/kml/paddle/trans.png",
-            icon_scale=0.0,
+            icon_href="https://maps.google.com/mapfiles/kml/paddle/trans.png",
+            icon_scale=1.0,
+            icon_color="00ffffff",
+            label_color=kml_color,
+            label_scale=scale,
+        )
+
+    def get_hybrid_label_style(self, kml_color: str, label_scale: Optional[float] = None) -> KMLStyle:
+        """Hybrid style: 3D vector ground polygon characters AND visible screen label."""
+        scale = self.config.default_label_scale if label_scale is None else label_scale
+        return self._get(
+            ("hybrid_label", kml_color, scale),
+            line_color=kml_color,
+            line_width=1.0,
+            poly_color=kml_color,
+            poly_fill=True,
+            poly_outline=True,
+            icon_href="https://maps.google.com/mapfiles/kml/paddle/trans.png",
+            icon_scale=1.0,
+            icon_color="00ffffff",
             label_color=kml_color,
             label_scale=scale,
         )
@@ -162,7 +180,7 @@ class StyleManager:
             poly_color=kml_color,
             poly_fill=True,
             poly_outline=True,
-            icon_href="http://maps.google.com/mapfiles/kml/paddle/trans.png",
+            icon_href="https://maps.google.com/mapfiles/kml/paddle/trans.png",
             icon_scale=0.0,
             label_scale=0.0,
         )
