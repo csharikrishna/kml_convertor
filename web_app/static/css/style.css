@@ -1539,11 +1539,11 @@ body.ui-idle .map-status-bar {
   line-height: 1.45;
 }
 
-/* Share Button in Results */
+/* Share Button in Results - Light Theme */
 .btn-share {
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.35);
-  color: #60a5fa;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
   padding: 0.65rem 1rem;
   border-radius: 8px;
   font-size: 0.88rem;
@@ -1557,18 +1557,19 @@ body.ui-idle .map-status-bar {
 }
 
 .btn-share:hover {
-  background: rgba(59, 130, 246, 0.25);
-  border-color: rgba(59, 130, 246, 0.5);
-  color: #93c5fd;
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e40af;
   transform: translateY(-1px);
 }
 
-/* Modal Backdrop & Card */
+/* Modal Backdrop & Card - Light Theme */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 9999;
   display: flex;
   align-items: center;
@@ -1577,14 +1578,14 @@ body.ui-idle .map-status-bar {
 }
 
 .modal-card {
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   max-width: 480px;
   width: 90%;
   padding: 1.75rem;
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
-  color: #f8fafc;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.15), 0 4px 12px rgba(0, 0, 0, 0.05);
+  color: #0f172a;
 }
 
 .modal-header {
@@ -1600,13 +1601,17 @@ body.ui-idle .map-status-bar {
   gap: 0.5rem;
   font-size: 1.15rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #0f172a;
+}
+
+.modal-title svg {
+  color: #2563eb;
 }
 
 .modal-close-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 1.5rem;
   cursor: pointer;
   line-height: 1;
@@ -1615,13 +1620,13 @@ body.ui-idle .map-status-bar {
 }
 
 .modal-close-btn:hover {
-  color: #f8fafc;
+  color: #0f172a;
 }
 
 .modal-desc {
-  font-size: 0.86rem;
-  color: #94a3b8;
-  line-height: 1.5;
+  font-size: 0.88rem;
+  color: #475569;
+  line-height: 1.55;
   margin-bottom: 1.25rem;
 }
 
@@ -1630,16 +1635,36 @@ body.ui-idle .map-status-bar {
 }
 
 .modal-field label {
+  display: block;
   font-size: 0.82rem;
   font-weight: 600;
-  color: #cbd5e1;
+  color: #334155;
+  margin-bottom: 0.35rem;
+}
+
+.modal-field select.select-box {
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.modal-field select.select-box:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .btn-copy-url {
-  background: #3b82f6;
+  background: #2563eb;
   color: #ffffff;
   border: none;
-  padding: 0.45rem 0.9rem;
+  padding: 0.5rem 1rem;
   border-radius: 6px;
   font-size: 0.82rem;
   font-weight: 600;
@@ -1649,6 +1674,32 @@ body.ui-idle .map-status-bar {
 }
 
 .btn-copy-url:hover {
-  background: #2563eb;
+  background: #1d4ed8;
+}
+
+.share-url-container input.text-input {
+  background: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.share-expiry-notice {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: #b45309 !important;
+  font-weight: 600;
+}
+
+.share-open-link {
+  font-size: 0.85rem;
+  color: #2563eb !important;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.share-open-link:hover {
+  text-decoration: underline;
 }
 

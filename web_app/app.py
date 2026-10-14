@@ -359,7 +359,7 @@ async def index(request: Request):
     return templates.TemplateResponse(
         request=request, name="index.html",
         context={"max_upload_mb": MAX_UPLOAD_BYTES // 2**20, "dwg_supported": is_dwg_supported(),
-                 "version": __version__},
+                 "version": f"{__version__}.{int(time.time())}"},
     )
 
 
@@ -653,6 +653,7 @@ async def view_shared_map(request: Request, share_id: str):
         "expiry_str": expiry_str,
         "expires_at_iso": datetime.fromtimestamp(share["expires_at"], tz=timezone.utc).isoformat(),
         "stats": share.get("stats", {}),
+        "version": f"{__version__}.{int(time.time())}",
     })
 
 
