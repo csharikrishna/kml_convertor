@@ -49,36 +49,6 @@
   --box-shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
 }
 
-/* Dark Workstation Mode (CAD / QGIS Workstation Palette) */
-body.dark-theme {
-  --bg-page: #0b0f19;
-  --bg-surface: #111827;
-  --bg-surface-elevated: #1e293b;
-  --bg-card: #111827;
-  --bg-input: #0f172a;
-  --bg-dock: rgba(17, 24, 39, 0.88);
-  --border-dock: rgba(51, 65, 85, 0.8);
-  --border-color: #1f2937;
-  --border-subtle: #374151;
-  --border-focus: #38bdf8;
-  --text-main: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
-  --shadow-dock: 0 12px 40px rgba(0, 0, 0, 0.5);
-
-  --gray-50: #0b0f19;
-  --gray-100: #111827;
-  --gray-200: #1f2937;
-  --gray-300: #374151;
-  --gray-600: #94a3b8;
-  --gray-700: #cbd5e1;
-  --gray-800: #e2e8f0;
-  --gray-900: #ffffff;
-  --primary-light: rgba(37, 99, 235, 0.18);
-  --box-shadow-lg: 0 14px 35px -5px rgba(0, 0, 0, 0.55), 0 10px 15px -6px rgba(0, 0, 0, 0.4);
-}
-
 * {
   box-sizing: border-box;
   margin: 0;
@@ -94,7 +64,6 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 main.container {
@@ -105,14 +74,14 @@ main.container {
 .navbar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-color);
-  padding: 0.85rem 2rem;
+  padding: 0.85rem 2.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
   position: sticky;
   top: 0;
   z-index: 1000;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
 .navbar-brand {
@@ -133,7 +102,7 @@ main.container {
 
 .navbar-links {
   display: flex;
-  gap: 1.25rem;
+  gap: 1.5rem;
   align-items: center;
 }
 
@@ -141,7 +110,7 @@ main.container {
   color: var(--text-muted);
   text-decoration: none;
   font-size: 0.88rem;
-  font-weight: 500;
+  font-weight: 600;
   transition: color 0.2s;
 }
 
@@ -149,33 +118,12 @@ main.container {
   color: var(--primary);
 }
 
-/* Theme Toggle Button in Navbar */
-.theme-toggle-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: var(--bg-page);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  padding: 0.4rem 0.85rem;
-  border-radius: 20px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.theme-toggle-btn:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  transform: translateY(-1px);
-}
-
-/* Main Container */
+/* Main Container - Expansive & Spacious Layout */
 .container {
-  max-width: 1480px;
+  max-width: 1800px;
+  width: 96%;
   margin: 0 auto;
-  padding: 1.5rem 2rem;
+  padding: 1.5rem 1.5rem 3rem 1.5rem;
 }
 
 .breadcrumbs {
@@ -830,16 +778,18 @@ main.container {
   background: #15803d;
 }
 
-/* Right Panel GIS Workstation Map Card */
+/* Right Panel GIS Workstation Map Card - Expansive & Wide */
 .map-card {
   position: relative;
   border-radius: var(--border-radius);
   overflow: hidden;
-  box-shadow: var(--box-shadow-lg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   border: 1px solid var(--border-color);
-  height: 720px;
-  background: #0f172a;
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  height: 100%;
+  min-height: 820px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Fullscreen Map Mode */
@@ -856,17 +806,19 @@ main.container {
 #map {
   width: 100%;
   height: 100%;
-  background: #0f172a;
+  flex: 1;
+  min-height: 820px;
+  background: #f8fafc;
 }
 
 /* ======================================================== */
-/* Enterprise GIS Workstation Dark Glass UI               */
+/* Enterprise GIS Workstation Light Glass UI                */
 /* ======================================================== */
 
 /* Custom High-End Leaflet Zoom Controls */
 .leaflet-bar {
   border: none !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12) !important;
   border-radius: 10px !important;
   overflow: hidden !important;
 }
@@ -877,17 +829,17 @@ main.container {
 }
 
 .leaflet-control-zoom a {
-  background: rgba(13, 19, 31, 0.85) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
-  color: #f8fafc !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #1e293b !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6) !important;
   width: 34px !important;
   height: 34px !important;
   line-height: 32px !important;
   font-size: 16px !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   transition: all 0.15s ease !important;
 }
 
@@ -899,13 +851,14 @@ main.container {
 .leaflet-control-zoom a:last-child {
   border-bottom-left-radius: 10px !important;
   border-bottom-right-radius: 10px !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9) !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background: rgba(30, 41, 59, 0.95) !important;
-  color: #38bdf8 !important;
-  border-color: rgba(56, 189, 248, 0.4) !important;
+  background: #ffffff !important;
+  color: #2563eb !important;
+  border-color: #93c5fd !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15) !important;
 }
 
 /* Floating Glass Dock */
@@ -920,17 +873,31 @@ main.container {
   gap: 0.55rem;
   pointer-events: none;
   flex-wrap: wrap;
-  background: rgba(13, 19, 31, 0.78);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(226, 232, 240, 0.95);
   border-radius: 12px;
   padding: 5px 6px;
-  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .floating-glass-dock > * {
   pointer-events: auto;
+}
+
+/* Auto-hide floating search dock and telemetry bar on 2.5s cursor inactivity */
+body.ui-idle .floating-glass-dock {
+  opacity: 0;
+  transform: translateY(-24px);
+  pointer-events: none;
+}
+
+body.ui-idle .map-status-bar {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
 }
 
 .glass-search-box {
@@ -938,24 +905,24 @@ main.container {
   min-width: 220px;
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   overflow: hidden;
   transition: all 0.2s ease;
 }
 
 .glass-search-box:focus-within {
-  border-color: rgba(56, 189, 248, 0.5);
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .search-icon-wrapper {
   padding-left: 0.75rem;
   display: flex;
   align-items: center;
-  color: #94a3b8;
+  color: #64748b;
   pointer-events: none;
 }
 
@@ -965,13 +932,13 @@ main.container {
   padding: 0.48rem 0.75rem;
   font-size: 0.82rem;
   width: 100%;
-  color: #f8fafc;
+  color: #0f172a;
   outline: none;
   font-family: 'Inter', system-ui, sans-serif;
 }
 
 .glass-search-input::placeholder {
-  color: #64748b;
+  color: #94a3b8;
   font-size: 0.8rem;
 }
 
@@ -988,7 +955,7 @@ main.container {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
   transition: all 0.15s ease;
 }
 
@@ -998,7 +965,7 @@ main.container {
 }
 
 .kbd-hint {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 3px;
   padding: 0 4px;
   font-size: 10px;
@@ -1009,7 +976,7 @@ main.container {
 .dock-separator {
   width: 1px;
   height: 22px;
-  background: rgba(255, 255, 255, 0.12);
+  background: #e2e8f0;
   margin: 0 2px;
   flex-shrink: 0;
 }
@@ -1021,48 +988,50 @@ main.container {
 }
 
 .glass-dock-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #334155;
   padding: 0.45rem 0.8rem;
   border-radius: 8px;
   font-size: 0.78rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.45rem;
   white-space: nowrap;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   font-family: 'Inter', system-ui, sans-serif;
 }
 
 .glass-dock-btn svg {
   flex-shrink: 0;
-  color: #94a3b8;
+  color: #64748b;
   transition: color 0.15s;
 }
 
 .glass-dock-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
   transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
 }
 
 .glass-dock-btn:hover svg {
-  color: #38bdf8;
+  color: #2563eb;
 }
 
 .glass-dock-btn.active {
-  background: rgba(37, 99, 235, 0.25);
-  border-color: rgba(59, 130, 246, 0.55);
-  color: #93c5fd;
-  box-shadow: 0 0 14px rgba(59, 130, 246, 0.3);
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.15);
 }
 
 .glass-dock-btn.active svg {
-  color: #93c5fd;
+  color: #2563eb;
 }
 
 /* Measurement Mode Snapping & Cursor Feedback */
@@ -1073,14 +1042,14 @@ main.container {
 }
 
 .measure-snap-tooltip {
-  background: rgba(13, 19, 31, 0.95) !important;
-  color: #38bdf8 !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #0284c7 !important;
   border: 1px solid #06b6d4 !important;
   font-size: 0.72rem !important;
   font-weight: 600 !important;
   padding: 3px 8px !important;
   border-radius: 6px !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12) !important;
   pointer-events: none !important;
 }
 
@@ -1091,19 +1060,21 @@ main.container {
   left: 0;
   right: 0;
   z-index: 1000;
-  background: rgba(9, 13, 22, 0.94);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid #e2e8f0;
   padding: 0.38rem 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 0.72rem;
-  color: #94a3b8;
+  color: #475569;
   pointer-events: none;
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   letter-spacing: 0.02em;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04);
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .map-status-left, .map-status-right {
@@ -1119,23 +1090,24 @@ main.container {
 }
 
 .telemetry-label {
-  color: #64748b;
+  color: #94a3b8;
   font-size: 0.68rem;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
 .map-status-val {
-  font-weight: 600;
-  color: #f1f5f9;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .telemetry-tag {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  color: #cbd5e1;
+  color: #64748b;
   font-size: 0.7rem;
+  font-weight: 500;
 }
 
 .status-live-dot {
@@ -1155,16 +1127,16 @@ main.container {
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
-  background: rgba(13, 19, 31, 0.92);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(6, 182, 212, 0.5);
   border-radius: 30px;
   padding: 0.45rem 1.25rem;
-  box-shadow: 0 8px 28px rgba(6, 182, 212, 0.3);
+  box-shadow: 0 8px 28px rgba(6, 182, 212, 0.25);
   font-size: 0.82rem;
   font-weight: 600;
-  color: #f8fafc;
+  color: #0f172a;
   align-items: center;
   gap: 0.85rem;
   white-space: nowrap;
@@ -1176,9 +1148,9 @@ main.container {
 }
 
 .btn-measure-action {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #e2e8f0;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
   font-size: 0.74rem;
   font-weight: 600;
   padding: 0.2rem 0.65rem;
@@ -1190,7 +1162,7 @@ main.container {
 .btn-measure-action:hover {
   background: #06b6d4;
   border-color: #06b6d4;
-  color: #090d16;
+  color: #ffffff;
 }
 
 /* Feature Inspector Card (Hover details) */
@@ -1200,17 +1172,18 @@ main.container {
   bottom: 2.2rem;
   right: 1rem;
   z-index: 1000;
-  background: rgba(13, 19, 31, 0.92);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 0.65rem 0.9rem;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
   font-size: 0.76rem;
   max-width: 260px;
   animation: fadeIn 0.15s ease;
   pointer-events: none;
+  color: #334155;
 }
 
 .feature-inspector-card.active {
@@ -1219,7 +1192,7 @@ main.container {
 
 .inspector-title {
   font-weight: 700;
-  color: #f8fafc;
+  color: #0f172a;
   margin-bottom: 0.35rem;
   display: flex;
   align-items: center;
@@ -1231,12 +1204,12 @@ main.container {
   display: flex;
   justify-content: space-between;
   margin-bottom: 0.2rem;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .inspector-row span.val {
   font-weight: 600;
-  color: #38bdf8;
+  color: #2563eb;
   font-family: 'JetBrains Mono', monospace;
 }
 
@@ -1246,16 +1219,17 @@ main.container {
   bottom: 2.2rem;
   left: 1rem;
   z-index: 1000;
-  background: rgba(13, 19, 31, 0.88);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
-  box-shadow: 0 20px 45px -8px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 14px 40px rgba(15, 23, 42, 0.12);
   width: 255px;
   max-height: 320px;
   overflow: hidden;
   transition: max-height 0.25s ease;
+  color: #0f172a;
 }
 
 .layer-panel-header {
@@ -1265,19 +1239,19 @@ main.container {
   padding: 0.65rem 0.85rem;
   font-size: 0.78rem;
   font-weight: 600;
-  color: #f8fafc;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #0f172a;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .layer-panel-title {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  color: #f8fafc;
+  color: #0f172a;
 }
 
 .layer-panel-title svg {
-  color: #38bdf8;
+  color: #2563eb;
 }
 
 .layer-quick-actions {
@@ -1291,7 +1265,7 @@ main.container {
   border: none;
   font-size: 0.72rem;
   font-weight: 500;
-  color: #38bdf8;
+  color: #2563eb;
   cursor: pointer;
   padding: 0.1rem 0.25rem;
   border-radius: 4px;
@@ -1299,21 +1273,21 @@ main.container {
 }
 
 .layer-quick-btn:hover {
-  color: #7dd3fc;
+  color: #1d4ed8;
   text-decoration: underline;
 }
 
 .layer-quick-actions .sep {
-  color: #475569;
+  color: #cbd5e1;
   font-size: 0.7rem;
 }
 
 .layer-panel-toggle {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   font-size: 0.8rem;
   cursor: pointer;
-  color: #94a3b8;
+  color: #475569;
   padding: 2px 5px;
   border-radius: 4px;
   display: flex;
@@ -1323,8 +1297,8 @@ main.container {
 }
 
 .layer-panel-toggle:hover {
-  color: #f8fafc;
-  background: rgba(255, 255, 255, 0.12);
+  color: #0f172a;
+  background: #e2e8f0;
 }
 
 .layer-panel-body {
@@ -1338,7 +1312,7 @@ main.container {
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.45rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #f8fafc;
 }
 
 .layer-item:last-child {
@@ -1355,15 +1329,15 @@ main.container {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border: 1.5px solid rgba(0, 0, 0, 0.15);
   flex-shrink: 0;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
 }
 
 .layer-item-name {
   font-size: 0.78rem;
-  font-weight: 500;
-  color: #f1f5f9;
+  font-weight: 600;
+  color: #1e293b;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -1435,37 +1409,37 @@ main.container {
 
 /* Survey Station Interactive Tooltip */
 .cad-station-tooltip {
-  background: rgba(13, 19, 31, 0.95) !important;
-  color: #f8fafc !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
   border-radius: 6px !important;
-  padding: 3px 8px !important;
+  padding: 4px 9px !important;
   font-size: 11px !important;
   font-weight: 600 !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
-  backdrop-filter: blur(4px) !important;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12) !important;
+  backdrop-filter: blur(8px) !important;
 }
 .cad-station-tooltip::before {
-  border-top-color: rgba(15, 23, 42, 0.92) !important;
+  border-top-color: #ffffff !important;
 }
 
 /* Measurement Line Markers */
 .measure-vertex-marker {
-  background: #06b6d4;
+  background: #2563eb;
   border: 2px solid #ffffff;
   border-radius: 50%;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
 }
 
 .measure-segment-tooltip {
-  background: rgba(15, 23, 42, 0.85);
-  color: #38bdf8;
-  border: 1px solid #06b6d4;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
   font-size: 0.72rem;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 2px 6px;
   border-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 /* Footer */

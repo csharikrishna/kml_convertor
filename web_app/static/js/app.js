@@ -34,43 +34,43 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFillToggle();
   setupControls();
   initShareModal();
+  initIdleUiAutoHide();
 });
 
 // ==========================================
-// Theme Management (Light / Workstation Dark)
+// Theme Management (Light Theme Enforced)
 // ==========================================
 function initTheme() {
-  const saved = localStorage.getItem('cad2kml_theme');
-  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  if (saved === 'dark' || (!saved && prefersDark)) {
-    setTheme('dark');
-  } else {
-    setTheme('light');
-  }
-
-  const toggleBtn = document.getElementById('themeToggleBtn');
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      const isDark = document.body.classList.contains('dark-theme');
-      setTheme(isDark ? 'light' : 'dark');
-    });
-  }
+  document.body.classList.remove('dark-theme');
+  try {
+    localStorage.removeItem('cad2kml_theme');
+  } catch (e) {}
 }
 
-function setTheme(mode) {
-  const isDark = mode === 'dark';
-  document.body.classList.toggle('dark-theme', isDark);
-  localStorage.setItem('cad2kml_theme', mode);
+// Auto-hide floating search dock and telemetry bar on 2.5s cursor inactivity
+function initIdleUiAutoHide() {
+  let idleTimer = null;
+  const IDLE_DELAY_MS = 2500;
 
-  const icon = document.getElementById('themeToggleIcon');
-  const text = document.getElementById('themeToggleText');
-  if (icon && text) {
-    icon.innerText = isDark ? '☀️' : '🌙';
-    text.innerText = isDark ? 'Light Mode' : 'Workstation Mode';
+  function wakeUi() {
+    if (document.body.classList.contains('ui-idle')) {
+      document.body.classList.remove('ui-idle');
+    }
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      const searchInput = document.getElementById('mapSearchInput');
+      const isInputFocused = searchInput && document.activeElement === searchInput;
+      if (!isInputFocused && typeof isMeasuring !== 'undefined' && !isMeasuring) {
+        document.body.classList.add('ui-idle');
+      }
+    }, IDLE_DELAY_MS);
   }
-  if (typeof map !== 'undefined' && map) {
-    setTimeout(() => map.invalidateSize(), 50);
-  }
+
+  ['mousemove', 'mousedown', 'touchstart', 'touchmove', 'keydown', 'wheel'].forEach(evt => {
+    window.addEventListener(evt, wakeUi, { passive: true });
+  });
+
+  wakeUi();
 }
 
 // Escape drawing-supplied text (layer names, TEXT/MTEXT content) before it is used as HTML.
