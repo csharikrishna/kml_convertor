@@ -747,13 +747,17 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
       const { data, fromCache } = await loadProjectOfflineFirst(projectId, fetchFn);
       const searchIndex = new CadastralSearchIndex(data);
 
-      // Initial plot resolution: explicit target > ?sy= in URL > first canal affected parcel > first parcel
+      // Initial plot resolution: ONLY if an explicit survey plot is requested
       let initialPlot: SurveyPlotRecord | null = null;
       let urlSy: string | null = null;
       if (typeof window !== "undefined") {
         try {
           const urlParams = new URL(window.location.href).searchParams;
-          urlSy = urlParams.get("sy");
+          const urlProject = urlParams.get("project");
+          // Only read ?sy= from URL if targetSurveyNo wasn't specified AND we are loading the matching project
+          if (!urlProject || urlProject === projectId) {
+            urlSy = urlParams.get("sy");
+          }
         } catch {}
       }
 
@@ -762,13 +766,26 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
         initialPlot = searchIndex.findExactPlot(lookupQuery);
       }
 
-      // Fallback: automatically select first affected parcel for immediate showcase
-      if (!initialPlot && data.survey_register && data.survey_register.length > 0) {
-        const affected = data.survey_register.find((p) => p.canal_passing);
-        initialPlot = affected || data.survey_register[0];
+      // Calculate full project extent across all cadastral parcels
+      let fullProjectBounds: [[number, number], [number, number]] | null = null;
+      if (data.survey_register && data.survey_register.length > 0) {
+        let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+        let count = 0;
+        for (const p of data.survey_register) {
+          if (p.bounds) {
+            minLat = Math.min(minLat, p.bounds[0][0], p.bounds[1][0]);
+            maxLat = Math.max(maxLat, p.bounds[0][0], p.bounds[1][0]);
+            minLng = Math.min(minLng, p.bounds[0][1], p.bounds[1][1]);
+            maxLng = Math.max(maxLng, p.bounds[0][1], p.bounds[1][1]);
+            count++;
+          }
+        }
+        if (count > 0 && minLat < maxLat && minLng < maxLng) {
+          fullProjectBounds = [[minLat, minLng], [maxLat, maxLng]];
+        }
       }
 
-      // Synchronize URL: ?project=...&sy=...
+      // Synchronize URL: ?project=...&sy=... (removes ?sy when opening in full extent mode)
       if (typeof window !== "undefined") {
         try {
           const newUrl = new URL(window.location.href);
@@ -790,11 +807,8 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
         currentProjectId: projectId,
         selectedPlot: initialPlot,
         isRightPanelOpen: Boolean(initialPlot),
+        targetFlyToBounds: initialPlot?.bounds || fullProjectBounds,
       });
-
-      if (initialPlot?.bounds) {
-        set({ targetFlyToBounds: initialPlot.bounds });
-      }
     } catch (err: any) {
       set({ error: err.message || "Failed to load project", isLoading: false });
     }
