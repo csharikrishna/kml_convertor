@@ -16,6 +16,7 @@ import { useGisStore } from "@/stores/useGisStore";
 import { checkBackendHealth, fetchSampleDrawingFile } from "@/lib/api/client";
 import { GlobalBrandAnchor } from "@/components/layout/GlobalBrandAnchor";
 import { GlobalModeSwitcher } from "@/components/layout/GlobalModeSwitcher";
+import { BackendWakeButton } from "@/components/layout/BackendWakeButton";
 
 interface HeaderProps {
   isSharedView?: boolean;
@@ -108,6 +109,8 @@ export function Header({
 
       {/* Right Actions & Master Mode Switcher */}
       <div className="flex items-center gap-3 shrink-0 whitespace-nowrap">
+        <BackendWakeButton />
+
         {!isSharedView && !hasData && (
           <button
             type="button"

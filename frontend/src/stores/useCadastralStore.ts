@@ -213,6 +213,51 @@ interface CadastralState {
   setProjectData: (data: CadastralProjectData) => void;
 }
 
+const STORAGE_KEY_CUSTOM_PROJECTS = "cad2kml_custom_projects_catalog";
+const STORAGE_PREFIX_PROJECT_DATA = "cad2kml_project_data_";
+
+export function getLocalCustomProjects(): CadastralProjectMeta[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CUSTOM_PROJECTS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalCustomProject(meta: CadastralProjectMeta, data: CadastralProjectData) {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = getLocalCustomProjects().filter((p) => p.id !== meta.id);
+    localStorage.setItem(STORAGE_KEY_CUSTOM_PROJECTS, JSON.stringify([meta, ...existing]));
+    localStorage.setItem(`${STORAGE_PREFIX_PROJECT_DATA}${meta.id}`, JSON.stringify(data));
+  } catch (e) {
+    console.warn("Failed to persist project in local storage:", e);
+  }
+}
+
+export function getLocalProjectData(projectId: string): CadastralProjectData | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${STORAGE_PREFIX_PROJECT_DATA}${projectId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function deleteLocalProject(projectId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const remaining = getLocalCustomProjects().filter((p) => p.id !== projectId);
+    localStorage.setItem(STORAGE_KEY_CUSTOM_PROJECTS, JSON.stringify(remaining));
+    localStorage.removeItem(`${STORAGE_PREFIX_PROJECT_DATA}${projectId}`);
+  } catch (e) {
+    console.warn("Failed to delete local project:", e);
+  }
+}
+
 const apiEndpoint = (path: string) => {
   // Always use same-origin relative path in browser so requests route cleanly through Next.js rewrite proxy.
   // This completely eliminates cross-origin browser CORS blocks between Vercel and Render.
@@ -413,40 +458,52 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
   setProjectData: (projectData) => set({ projectData }),
 
   fetchProjectsList: async () => {
+    let baseProjects: CadastralProjectMeta[] = [];
     try {
       const res = await fetch(apiEndpoint("/api/cadastral/projects"));
       if (res.ok) {
         const data = await res.json();
         if (data.projects && Array.isArray(data.projects)) {
-          set({ projectsList: data.projects });
-          return;
+          baseProjects = data.projects;
         }
       }
-      // Fallback API route
-      const sRes = await fetch(apiEndpoint("/api/cadastral/samples"));
-      if (sRes.ok) {
-        const sData = await sRes.json();
-        if (sData.samples && Array.isArray(sData.samples)) {
-          set({ projectsList: sData.samples });
-          return;
+      if (baseProjects.length === 0) {
+        const sRes = await fetch(apiEndpoint("/api/cadastral/samples"));
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          if (sData.samples && Array.isArray(sData.samples)) {
+            baseProjects = sData.samples;
+          }
         }
       }
     } catch (e) {
       console.warn("Failed to fetch cadastral projects list from backend:", e);
     }
 
-    // Static Edge CDN Fallback (ensures projects always render even if Render backend is sleeping or blocked)
-    try {
-      const staticRes = await fetch("/data/projects.json");
-      if (staticRes.ok) {
-        const staticData = await staticRes.json();
-        if (staticData.projects && Array.isArray(staticData.projects)) {
-          set({ projectsList: staticData.projects });
+    // Static Edge CDN Fallback if backend returned empty/offline
+    if (baseProjects.length === 0) {
+      try {
+        const staticRes = await fetch("/data/projects.json");
+        if (staticRes.ok) {
+          const staticData = await staticRes.json();
+          if (staticData.projects && Array.isArray(staticData.projects)) {
+            baseProjects = staticData.projects;
+          }
         }
+      } catch (staticErr) {
+        console.warn("Failed to fetch static projects list:", staticErr);
       }
-    } catch (staticErr) {
-      console.warn("Failed to fetch static projects list:", staticErr);
     }
+
+    // Merge with any persistent user-created projects in localStorage (ensures zero data loss on backend sleep)
+    const localProjects = getLocalCustomProjects();
+    const merged = [...baseProjects];
+    for (const lp of localProjects) {
+      if (!merged.some((p) => p.id === lp.id)) {
+        merged.push(lp);
+      }
+    }
+    set({ projectsList: merged });
   },
 
   loadProject: async (projectId: string) => {
@@ -477,6 +534,11 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
         }
       }
 
+      // If still not found, check localStorage persistent custom projects
+      if (!data) {
+        data = getLocalProjectData(projectId);
+      }
+
       if (!data) {
         throw new Error(`Failed to load project: ${projectId}`);
       }
@@ -499,13 +561,10 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
 
   deleteProject: async (projectId: string) => {
     try {
-      const res = await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`), {
+      deleteLocalProject(projectId);
+      await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`), {
         method: "DELETE",
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || "Failed to delete project");
-      }
+      }).catch(() => {});
       await get().fetchProjectsList();
       if (get().currentProjectId === projectId) {
         await get().loadProject("padamatiyaleru");

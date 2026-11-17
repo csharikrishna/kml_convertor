@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { GlobalBrandAnchor } from "@/components/layout/GlobalBrandAnchor";
 import { GlobalModeSwitcher } from "@/components/layout/GlobalModeSwitcher";
+import { BackendWakeButton } from "@/components/layout/BackendWakeButton";
 import { useCadastralStore, SurveyPlotRecord } from "@/stores/useCadastralStore";
 import { useGisStore } from "@/stores/useGisStore";
 
@@ -614,6 +615,9 @@ export function CadastralHeader() {
 
       {/* Right Actions Toolbar */}
       <div className="flex items-center gap-3 shrink-0 whitespace-nowrap">
+        {/* Backend Wake Status Button */}
+        <BackendWakeButton />
+
         {/* CAD Engine Sync Status */}
         <div
           title="GIS Vector Pipeline Active (Shapely + STRtree Synced)"

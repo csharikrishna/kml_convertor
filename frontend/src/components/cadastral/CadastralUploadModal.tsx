@@ -17,7 +17,7 @@ import {
   Info,
   Check,
 } from "lucide-react";
-import { useCadastralStore } from "@/stores/useCadastralStore";
+import { useCadastralStore, saveLocalCustomProject } from "@/stores/useCadastralStore";
 
 export function CadastralUploadModal() {
   const {
@@ -147,6 +147,23 @@ export function CadastralUploadModal() {
 
       setProcessingStage(4);
       const result = await res.json();
+
+      // Persist in local storage so data is NEVER wiped even if Render backend sleeps or resets container
+      if (result.project_data && result.project_id) {
+        saveLocalCustomProject(
+          {
+            id: result.project_id,
+            title: projectTitle.trim() || `${villageName.trim()} Village Cadastral Project`,
+            village: villageName.trim(),
+            mandal: mandalName.trim() || undefined,
+            district: districtName.trim() || undefined,
+            plots_count: result.project_data.survey_register?.length || 0,
+            has_excel: Boolean(excelFile),
+            has_pdf: Boolean(pdfFile),
+          },
+          result.project_data
+        );
+      }
 
       // Refresh projects catalog in store
       await fetchProjectsList();
