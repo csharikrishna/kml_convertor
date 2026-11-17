@@ -28,10 +28,12 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -156,6 +158,23 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="DXF to KML Online Converter API", version=__version__, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# Enable GZip compression for payloads > 1KB (compresses GeoJSON & spatial data by 80-90%)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+cors_origins_env = os.environ.get("CORS_ORIGINS", "")
+cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+if not cors_origins or cors_origins == ["*"]:
+    cors_origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost(:\d+)?",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # --------------------------------------------------------------------------- middleware
@@ -705,6 +724,502 @@ async def download_shared_file(share_id: str):
         "Content-Disposition": f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{quote(target.name)}'
     }
     return FileResponse(path=target, media_type=media_type, headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# CADASTRAL GIS & CANAL ALIGNMENT SUITE
+# ---------------------------------------------------------------------------
+
+from datetime import datetime
+from dxf2kml.cadastral import analyze_cadastral_dwg
+from dxf2kml.excel_parser import parse_cadastral_excel_or_csv
+
+_cadastral_cache: Dict[str, Any] = {}
+_cadastral_lock = threading.Lock()
+
+PROJECTS_DIR = BASE_DIR.parent / "projects"
+PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+PROJECTS_CATALOG_FILE = PROJECTS_DIR / "catalog.json"
+
+
+def _load_projects_catalog() -> Dict[str, Any]:
+    if not PROJECTS_CATALOG_FILE.is_file():
+        return {}
+    try:
+        with open(PROJECTS_CATALOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_projects_catalog(catalog: Dict[str, Any]) -> None:
+    try:
+        tmp = PROJECTS_CATALOG_FILE.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(catalog, f, indent=2)
+        tmp.replace(PROJECTS_CATALOG_FILE)
+    except Exception as ex:
+        logger.warning(f"Failed to save projects catalog: {ex}")
+
+
+SAMPLE_PROJECTS = {
+    "konampalle": {
+        "id": "konampalle",
+        "title": "Konampalle Canal Project (KM 216.300 - 219.750)",
+        "village": "Konampalle",
+        "mandal": "Beluguppa",
+        "district": "Anantapur",
+        "crs": "EPSG:32643",
+        "filename": "1) KONAMPALLE-KM 216.300 to 217.300 & 218.575 to 219.750.dwg",
+        "chainage_span": "KM 216.300 to 219.750",
+    },
+    "padamatiyaleru": {
+        "id": "padamatiyaleru",
+        "title": "Padamatiyaleru Canal Project (KM 217.300 - 242.350)",
+        "village": "Padamatiyaleru",
+        "mandal": "Beluguppa",
+        "district": "Anantapur",
+        "crs": "EPSG:32643",
+        "filename": "2) PADAMATIYALERU-KM 217.300 to 218.575 & 219.750 to 223.140 & 236.775 to 242.350.dwg",
+        "chainage_span": "KM 217.300 to 242.350",
+    },
+}
+
+
+@app.get("/api/cadastral/projects")
+async def list_all_cadastral_projects():
+    """List all available cadastral projects (sample canal reaches + user-created village projects)."""
+    projects_list = []
+    root_sample_dir = BASE_DIR.parent / "sample"
+
+    # 1. Official Sample Projects
+    for sid, info in SAMPLE_PROJECTS.items():
+        file_path = root_sample_dir / info["filename"]
+        exists = file_path.is_file()
+        projects_list.append({
+            **info,
+            "is_sample": True,
+            "is_custom": False,
+            "available": exists,
+            "plots_count": 907 if sid == "padamatiyaleru" else 351,
+            "affected_count": 198 if sid == "padamatiyaleru" else 84,
+            "has_excel": True,
+            "has_pdf": True,
+            "created_at": "2024-01-01T00:00:00",
+        })
+
+    # 2. Custom User Village Projects
+    catalog = _load_projects_catalog()
+    for pid, pmeta in catalog.items():
+        proj_dir = PROJECTS_DIR / pid
+        projects_list.append({
+            **pmeta,
+            "is_sample": False,
+            "is_custom": True,
+            "available": proj_dir.is_dir() and (proj_dir / "project.json").is_file(),
+        })
+
+    return {"projects": projects_list}
+
+
+@app.get("/api/cadastral/samples")
+async def list_cadastral_samples():
+    """List available sample DWG cadastral projects (for backward compatibility)."""
+    res = await list_all_cadastral_projects()
+    return {"samples": res["projects"]}
+
+
+@app.get("/api/cadastral/project/{project_id}")
+async def get_cadastral_project(project_id: str):
+    """Retrieve cadastral GIS project data (layers, survey register, metrics)."""
+    # 1. Check in-memory cache
+    with _cadastral_lock:
+        if project_id in _cadastral_cache:
+            return JSONResponse(content=_cadastral_cache[project_id])
+
+    # 2. Check if user-created project on disk
+    user_proj_file = PROJECTS_DIR / project_id / "project.json"
+    if user_proj_file.is_file():
+        try:
+            with open(user_proj_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            with _cadastral_lock:
+                _cadastral_cache[project_id] = data
+            return JSONResponse(content=data)
+        except Exception as ex:
+            logger.error("Failed to read project file {}: {}", user_proj_file, ex)
+
+    # 3. Check if sample project
+    if project_id in SAMPLE_PROJECTS:
+        return await get_cadastral_sample(project_id)
+
+    raise HTTPException(status_code=404, detail="Cadastral project not found.")
+
+
+@app.get("/api/cadastral/sample/{sample_id}")
+async def get_cadastral_sample(sample_id: str):
+    """Retrieve pre-analyzed cadastral GIS layers and survey register."""
+    if sample_id not in SAMPLE_PROJECTS:
+        raise HTTPException(status_code=404, detail="Unknown sample project ID.")
+
+    with _cadastral_lock:
+        if sample_id in _cadastral_cache:
+            return JSONResponse(content=_cadastral_cache[sample_id])
+
+    info = SAMPLE_PROJECTS[sample_id]
+    sample_file = BASE_DIR.parent / "sample" / info["filename"]
+    if not sample_file.is_file():
+        raise HTTPException(status_code=404, detail=f"Sample DWG file not found: {info['filename']}")
+
+    try:
+        data = analyze_cadastral_dwg(
+            dwg_or_dxf_path=sample_file,
+            input_epsg=info["crs"],
+            village_name=info["village"],
+            mandal_name=info["mandal"],
+            district_name=info["district"],
+            canal_buffer_meters=12.5,
+        )
+        data["project_id"] = sample_id
+        with _cadastral_lock:
+            _cadastral_cache[sample_id] = data
+        return JSONResponse(content=data)
+    except Exception as ex:
+        logger.exception("Failed to analyze sample project {}: {}", sample_id, ex)
+        raise HTTPException(status_code=500, detail=f"Cadastral analysis failed: {str(ex)}")
+
+
+@app.post("/api/cadastral/projects/create")
+async def create_village_project(
+    title: str = Form(""),
+    village_name: str = Form(""),
+    mandal_name: str = Form(""),
+    district_name: str = Form(""),
+    crs: str = Form("EPSG:32643"),
+    canal_buffer: float = Form(12.5),
+    drawing_file: UploadFile = File(...),
+    excel_file: Optional[UploadFile] = File(None),
+    pdf_file: Optional[UploadFile] = File(None),
+):
+    """Create a persistent village project with DWG drawing, optional Land Plan Excel, and PDF map scan."""
+    dwg_suffix = Path(drawing_file.filename or "").suffix.lower()
+    if dwg_suffix not in (".dwg", ".dxf"):
+        raise HTTPException(status_code=400, detail="A valid AutoCAD DWG or DXF drawing is required.")
+
+    # Generate friendly project ID
+    safe_vname = re.sub(r"[^a-zA-Z0-9]+", "-", village_name.strip().lower() or "village").strip("-")
+    project_id = f"proj-{safe_vname}-{secrets.token_hex(4)}"
+    proj_dir = PROJECTS_DIR / project_id
+    proj_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Save Drawing File
+    drawing_path = proj_dir / f"drawing{dwg_suffix}"
+    with open(drawing_path, "wb") as f:
+        shutil.copyfileobj(drawing_file.file, f)
+
+    # 2. Run Cadastral Analysis
+    v_clean = village_name.strip() or safe_vname.capitalize()
+    m_clean = mandal_name.strip() or "Beluguppa"
+    d_clean = district_name.strip() or "Anantapur"
+    p_title = title.strip() or f"{v_clean} Village Cadastral Project"
+
+    try:
+        data = analyze_cadastral_dwg(
+            dwg_or_dxf_path=drawing_path,
+            input_epsg=crs.strip() or "EPSG:32643",
+            village_name=v_clean,
+            mandal_name=m_clean,
+            district_name=d_clean,
+            canal_buffer_meters=float(canal_buffer) if canal_buffer > 0 else 12.5,
+        )
+    except Exception as ex:
+        logger.exception("Cadastral analysis failed for {}: {}", drawing_file.filename, ex)
+        shutil.rmtree(proj_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"CAD drawing processing failed: {str(ex)}")
+
+    # 3. Optional Land Plan Schedule / Coordinates Excel Ingestion
+    has_excel = False
+    if excel_file and excel_file.filename and excel_file.size:
+        ex_suffix = Path(excel_file.filename).suffix.lower()
+        if ex_suffix in (".xlsx", ".xlsm", ".csv"):
+            excel_path = proj_dir / f"schedule{ex_suffix}"
+            with open(excel_path, "wb") as f:
+                shutil.copyfileobj(excel_file.file, f)
+
+            try:
+                excel_res = parse_cadastral_excel_or_csv(excel_path)
+                s_map = excel_res.get("survey_records", {})
+
+                # Merge owner details into survey_register
+                for p in data.get("survey_register", []):
+                    s_no = str(p.get("survey_no", "")).strip()
+                    match = s_map.get(s_no)
+                    if not match:
+                        base_sno = re.split(r"[/,\s]", s_no)[0]
+                        match = s_map.get(base_sno)
+                    if match:
+                        if match.get("pattadar_name"):
+                            p["pattadar_name"] = match["pattadar_name"]
+                        if match.get("khata_no"):
+                            p["khata_no"] = match["khata_no"]
+                        if match.get("land_nature"):
+                            p["land_nature"] = match["land_nature"]
+
+                has_excel = True
+            except Exception as ex:
+                logger.warning("Could not enrich with Excel schedule: {}", ex)
+
+    # 4. Optional PDF Document Ingestion
+    has_pdf = False
+    if pdf_file and pdf_file.filename and pdf_file.size:
+        pdf_suffix = Path(pdf_file.filename).suffix.lower()
+        if pdf_suffix == ".pdf":
+            pdf_path = proj_dir / "document.pdf"
+            with open(pdf_path, "wb") as f:
+                shutil.copyfileobj(pdf_file.file, f)
+
+            data["documents"] = [
+                {
+                    "title": f"{v_clean} Village Map Scan & Gazette",
+                    "filename": pdf_file.filename,
+                    "url": f"/api/cadastral/project/{project_id}/document",
+                    "size_bytes": pdf_path.stat().st_size,
+                }
+            ]
+            has_pdf = True
+
+    # 5. Metadata & Persistence
+    data["project_id"] = project_id
+    data["title"] = p_title
+    data["created_at"] = datetime.now().isoformat()
+
+    try:
+        with open(proj_dir / "project.json", "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        catalog = _load_projects_catalog()
+        catalog[project_id] = {
+            "id": project_id,
+            "title": p_title,
+            "village": v_clean,
+            "mandal": m_clean,
+            "district": d_clean,
+            "crs": crs,
+            "plots_count": len(data.get("survey_register", [])),
+            "affected_count": sum(1 for p in data.get("survey_register", []) if p.get("canal_passing")),
+            "chainage_span": f"{data.get('summary', {}).get('acquired_area_acres', 0)} ac acq",
+            "has_excel": has_excel,
+            "has_pdf": has_pdf,
+            "created_at": data["created_at"],
+            "is_custom": True,
+        }
+        _save_projects_catalog(catalog)
+
+        with _cadastral_lock:
+            _cadastral_cache[project_id] = data
+
+        return JSONResponse(content={"success": True, "project_id": project_id, "project_data": data})
+    except Exception as ex:
+        logger.exception("Failed to save project {}: {}", project_id, ex)
+        raise HTTPException(status_code=500, detail=f"Failed to persist project: {str(ex)}")
+
+
+@app.get("/api/cadastral/project/{project_id}/document")
+async def get_project_document(project_id: str):
+    """Download attached PDF document for a project."""
+    pdf_path = PROJECTS_DIR / project_id / "document.pdf"
+    if not pdf_path.is_file():
+        raise HTTPException(status_code=404, detail="Project document not found.")
+    return FileResponse(pdf_path, media_type="application/pdf", filename=f"{project_id}_document.pdf")
+
+
+@app.delete("/api/cadastral/project/{project_id}")
+async def delete_cadastral_project(project_id: str):
+    """Delete a user-created village project folder."""
+    if project_id in SAMPLE_PROJECTS:
+        raise HTTPException(status_code=403, detail="Default sample projects cannot be deleted.")
+
+    proj_dir = PROJECTS_DIR / project_id
+    if proj_dir.is_dir():
+        shutil.rmtree(proj_dir, ignore_errors=True)
+
+    catalog = _load_projects_catalog()
+    if project_id in catalog:
+        del catalog[project_id]
+        _save_projects_catalog(catalog)
+
+    with _cadastral_lock:
+        _cadastral_cache.pop(project_id, None)
+
+    return {"success": True, "message": f"Project {project_id} deleted."}
+
+
+@app.post("/api/cadastral/analyze")
+async def analyze_uploaded_drawing(
+    file: UploadFile = File(...),
+    crs: str = Form("EPSG:32643"),
+    village_name: str = Form(""),
+    mandal_name: str = Form(""),
+    district_name: str = Form(""),
+    canal_buffer: float = Form(12.5),
+    excel_file: Optional[UploadFile] = File(None),
+    pdf_file: Optional[UploadFile] = File(None),
+):
+    """Analyze a user-uploaded drawing and create a project."""
+    return await create_village_project(
+        title=f"{village_name.strip() or 'Custom'} Village Project",
+        village_name=village_name,
+        mandal_name=mandal_name,
+        district_name=district_name,
+        crs=crs,
+        canal_buffer=canal_buffer,
+        drawing_file=file,
+        excel_file=excel_file,
+        pdf_file=pdf_file,
+    )
+
+
+@app.get("/api/cadastral/export-table/{project_id}")
+async def export_cadastral_table_csv(project_id: str):
+    """Export Form A Land Plan Schedule survey register as CSV."""
+    with _cadastral_lock:
+        data = _cadastral_cache.get(project_id)
+
+    if not data:
+        # Check disk storage for user-created project
+        disk_proj = PROJECTS_DIR / project_id / "project.json"
+        if disk_proj.is_file():
+            try:
+                with open(disk_proj, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                with _cadastral_lock:
+                    _cadastral_cache[project_id] = data
+            except Exception:
+                pass
+
+    if not data:
+        # Check if it is a sample ID
+        if project_id in SAMPLE_PROJECTS:
+            info = SAMPLE_PROJECTS[project_id]
+            sample_file = BASE_DIR.parent / "sample" / info["filename"]
+            if sample_file.is_file():
+                data = analyze_cadastral_dwg(
+                    dwg_or_dxf_path=sample_file,
+                    input_epsg=info["crs"],
+                    village_name=info["village"],
+                    mandal_name=info["mandal"],
+                    district_name=info["district"],
+                )
+                with _cadastral_lock:
+                    _cadastral_cache[project_id] = data
+
+    if not data or "survey_register" not in data:
+        raise HTTPException(status_code=404, detail="Cadastral project data not found.")
+
+    import io
+    import csv
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "S.No",
+        "Survey No",
+        "Land Classification",
+        "Village",
+        "Mandal",
+        "District",
+        "Total Area (Acres)",
+        "Total Area (Ac - Cts)",
+        "Total Area (Sq.Meters)",
+        "Canal Passing",
+        "Acquired Area (Acres)",
+        "Acquired Area (Sq.Meters)",
+        "Balance Area (Acres)",
+        "Balance Area (Sq.Meters)",
+        "Chainage Range",
+        "Canal Length (m)",
+        "Canal Width (m)",
+        "Centroid Latitude",
+        "Centroid Longitude",
+        "Google Maps Link",
+    ])
+
+    for i, row in enumerate(data.get("survey_register", []), start=1):
+        center = row.get("center") or [None, None]
+        lat = center[0] if len(center) >= 2 else None
+        lon = center[1] if len(center) >= 2 else None
+        gmaps_url = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}" if lat is not None and lon is not None else ""
+
+        writer.writerow([
+            i,
+            row.get("survey_no", ""),
+            row.get("land_type", "Ryotwari Patta"),
+            row.get("village", ""),
+            row.get("mandal", ""),
+            row.get("district", ""),
+            row.get("total_acres", 0),
+            row.get("total_ac_cts", ""),
+            row.get("total_area_m2", 0),
+            "Yes" if row.get("canal_passing") else "No",
+            row.get("acquired_acres", 0),
+            row.get("acquired_area_m2", 0),
+            row.get("balance_acres", 0),
+            row.get("balance_area_m2", 0),
+            row.get("chainage_range", ""),
+            row.get("canal_length_m", 0),
+            row.get("canal_width_m", 0),
+            f"{lat:.6f}" if lat is not None else "",
+            f"{lon:.6f}" if lon is not None else "",
+            gmaps_url,
+        ])
+
+    csv_data = output.getvalue()
+    filename = f"Land_Plan_Schedule_{data.get('village', 'Survey')}.csv"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+@app.get("/api/cadastral/apsac/parcels")
+async def query_apsac_parcels(
+    village: str = Query(..., description="Village Name, e.g. Konampalle"),
+    mandal: Optional[str] = Query(None, description="Mandal Name, e.g. Beluguppa"),
+    district: Optional[str] = Query(None, description="District Name, e.g. Anantapur"),
+):
+    """
+    Query official Andhra Pradesh Cadastral parcel polygons directly from APSAC ArcGIS MapServer.
+    Returns GeoJSON FeatureCollection with survey numbers and area.
+    """
+    import urllib.request
+    import urllib.parse
+    import json
+
+    clauses = [f"UPPER(villagenam) LIKE '%{village.upper().strip()}%'"]
+    if mandal:
+        clauses.append(f"UPPER(mandalnam) LIKE '%{mandal.upper().strip()}%'")
+    if district:
+        clauses.append(f"UPPER(dstrctnam) LIKE '%{district.upper().strip()}%'")
+
+    where_sql = " AND ".join(clauses)
+    params = urllib.parse.urlencode({
+        "where": where_sql,
+        "outFields": "objectid,dstrctnam,mandalnam,villagenam,parcelnam,parceltyp,st_area(shape),st_length(shape)",
+        "outSR": "4326",
+        "f": "geojson",
+        "returnGeometry": "true",
+    })
+
+    url = f"https://apsac.ap.gov.in/gisserver/rest/services/cadastral/Andhra_Cadastral/MapServer/0/query?{params}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            content = response.read().decode("utf-8")
+            data = json.loads(content)
+            return JSONResponse(data)
+    except Exception as ex:
+        raise HTTPException(status_code=502, detail=f"Failed to query APSAC Cadastral MapServer: {str(ex)}")
 
 
 if __name__ == "__main__":

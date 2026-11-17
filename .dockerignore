@@ -18,5 +18,8 @@ venv
 claudeprompt.txt
 tmp
 temp
+frontend/
+node_modules/
+docs/
 # dependencies/*.deb is intentionally NOT ignored: a locally downloaded ODA package
 # is used for offline builds (checksum-verified in the Dockerfile).

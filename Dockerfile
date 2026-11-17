@@ -58,10 +58,13 @@ RUN pip install --default-timeout=120 --retries 5 -r requirements.txt
 
 COPY dxf2kml/ dxf2kml/
 COPY web_app/ web_app/
+COPY sample/ sample/
+COPY projects/ projects/
 COPY main.py pyproject.toml README.md ./
 
 RUN useradd --create-home --uid 10001 appuser \
-    && mkdir -p "$DXF2KML_TEMP_DIR" && chown appuser:appuser "$DXF2KML_TEMP_DIR"
+    && mkdir -p "$DXF2KML_TEMP_DIR" /app/projects \
+    && chown -R appuser:appuser "$DXF2KML_TEMP_DIR" /app/projects
 
 
 # ---------------------------------------------------------------------------------

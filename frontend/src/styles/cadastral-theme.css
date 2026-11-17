@@ -1,0 +1,354 @@
+/* ====================================================================
+   Cadastral Survey Studio - Unified Theme System
+   Clean Light Theme: Crisp White, Glassmorphic Frost, Royal Azure Blue
+   ==================================================================== */
+
+:root {
+  /* Brand / Primary (Royal & Azure Blue) */
+  --cad-blue-50: #eff6ff;
+  --cad-blue-100: #dbeafe;
+  --cad-blue-200: #bfdbfe;
+  --cad-blue-300: #93c5fd;
+  --cad-blue-400: #60a5fa;
+  --cad-blue-500: #3b82f6;
+  --cad-blue-600: #2563eb;
+  --cad-blue-700: #1d4ed8;
+  --cad-blue-800: #1e40af;
+  --cad-blue-900: #1e3a8a;
+
+  /* Glassmorphic Surfaces */
+  --cad-glass-bg: #ffffff;
+  --cad-glass-bg-subtle: #f8fafc;
+  --cad-glass-bg-hover: #ffffff;
+  --cad-glass-border: #e2e8f0;
+  --cad-glass-border-hover: #bfdbfe;
+  --cad-glass-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.08);
+  --cad-glass-shadow-sm: 0 2px 8px -1px rgba(15, 23, 42, 0.05);
+  --cad-glass-blur: 16px;
+
+  /* Engineering Status Tokens */
+  --cad-emerald: #059669;
+  --cad-emerald-bg: #ecfdf5;
+  --cad-emerald-border: #a7f3d0;
+
+  --cad-amber: #d97706;
+  --cad-amber-bg: #fffbeb;
+  --cad-amber-border: #fde68a;
+
+  --cad-sky: #0284c7;
+  --cad-sky-bg: #f0f9ff;
+  --cad-sky-border: #bae6fd;
+
+  --cad-crimson: #dc2626;
+  --cad-crimson-bg: #fef2f2;
+  --cad-crimson-border: #fecaca;
+
+  /* Typography */
+  --cad-text-title: #0f172a;       /* slate-900 */
+  --cad-text-body: #334155;        /* slate-700 */
+  --cad-text-muted: #64748b;       /* slate-500 */
+  --cad-text-dim: #94a3b8;         /* slate-400 */
+}
+
+/* --------------------------------------------------------------------
+   Core Glassmorphic Containers
+   -------------------------------------------------------------------- */
+.cad-panel {
+  background: var(--cad-glass-bg);
+  border: 1px solid var(--cad-glass-border);
+  box-shadow: var(--cad-glass-shadow);
+  border-radius: 0.5rem;
+}
+
+.cad-panel-subtle {
+  background: var(--cad-glass-bg-subtle);
+  border: 1px solid var(--cad-glass-border);
+  box-shadow: var(--cad-glass-shadow-sm);
+  border-radius: 0.5rem;
+}
+
+.cad-header {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(var(--cad-glass-blur));
+  -webkit-backdrop-filter: blur(var(--cad-glass-blur));
+  border-bottom: 1px solid var(--cad-glass-border);
+  box-shadow: 0 2px 10px -2px rgba(15, 23, 42, 0.05);
+}
+
+.cad-card {
+  background: var(--cad-glass-bg-subtle);
+  border: 1px solid var(--cad-glass-border);
+  border-radius: 0.75rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cad-card:hover {
+  background: var(--cad-glass-bg-hover);
+  border-color: var(--cad-glass-border-hover);
+  box-shadow: 0 6px 20px -4px rgba(37, 99, 235, 0.08);
+}
+
+/* --------------------------------------------------------------------
+   Buttons & Interactive Elements
+   -------------------------------------------------------------------- */
+.cad-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--cad-blue-700), var(--cad-blue-600));
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.625rem;
+  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.35);
+  transition: all 0.15s ease-out;
+  cursor: pointer;
+}
+
+.cad-btn-primary:hover {
+  background: linear-gradient(135deg, var(--cad-blue-600), var(--cad-blue-500));
+  box-shadow: 0 6px 16px -2px rgba(37, 99, 235, 0.45);
+  transform: translateY(-0.5px);
+}
+
+.cad-btn-primary:active {
+  transform: translateY(0);
+}
+
+.cad-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--cad-text-body);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--cad-glass-border);
+  border-radius: 0.625rem;
+  box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.05);
+  transition: all 0.15s ease-out;
+  cursor: pointer;
+}
+
+.cad-btn-secondary:hover {
+  background: var(--cad-blue-50);
+  color: var(--cad-blue-700);
+  border-color: var(--cad-blue-200);
+  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.1);
+}
+
+.cad-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--cad-text-muted);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--cad-glass-border);
+  border-radius: 0.5rem;
+  transition: all 0.15s ease-out;
+  cursor: pointer;
+}
+
+.cad-btn-icon:hover {
+  color: var(--cad-blue-700);
+  background: var(--cad-blue-50);
+  border-color: var(--cad-blue-200);
+}
+
+/* --------------------------------------------------------------------
+   Inputs & Search
+   -------------------------------------------------------------------- */
+.cad-input {
+  background: rgba(248, 250, 252, 0.85);
+  border: 1px solid var(--cad-glass-border);
+  color: var(--cad-text-title);
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  transition: all 0.15s ease-out;
+  outline: none;
+}
+
+.cad-input:focus {
+  background: #ffffff;
+  border-color: var(--cad-blue-500);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.cad-input::placeholder {
+  color: var(--cad-text-dim);
+}
+
+/* --------------------------------------------------------------------
+   Badges & Status Chips
+   -------------------------------------------------------------------- */
+.cad-badge-blue {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cad-blue-700);
+  background: var(--cad-blue-50);
+  border: 1px solid var(--cad-blue-200);
+  border-radius: 0.375rem;
+}
+
+.cad-badge-emerald {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cad-emerald);
+  background: var(--cad-emerald-bg);
+  border: 1px solid var(--cad-emerald-border);
+  border-radius: 0.375rem;
+}
+
+.cad-badge-amber {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cad-amber);
+  background: var(--cad-amber-bg);
+  border: 1px solid var(--cad-amber-border);
+  border-radius: 0.375rem;
+}
+
+.cad-badge-slate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--cad-text-body);
+  background: rgba(241, 245, 249, 0.9);
+  border: 1px solid var(--cad-glass-border);
+  border-radius: 0.375rem;
+}
+
+/* --------------------------------------------------------------------
+   Metric Cards & Data Displays
+   -------------------------------------------------------------------- */
+.cad-metric-card {
+  background: var(--cad-glass-bg-subtle);
+  border: 1px solid var(--cad-glass-border);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: all 0.15s ease-out;
+}
+
+.cad-metric-card:hover {
+  background: #ffffff;
+  border-color: var(--cad-blue-200);
+  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.08);
+}
+
+.cad-metric-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--cad-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.cad-metric-value {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--cad-text-title);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* --------------------------------------------------------------------
+   Tabs Navigation
+   -------------------------------------------------------------------- */
+.cad-tabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: rgba(241, 245, 249, 0.8);
+  border: 1px solid var(--cad-glass-border);
+  border-radius: 0.625rem;
+}
+
+.cad-tab {
+  flex: 1;
+  text-align: center;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cad-text-muted);
+  border-radius: 0.45rem;
+  transition: all 0.15s ease-out;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+.cad-tab:hover {
+  color: var(--cad-text-title);
+}
+
+.cad-tab-active {
+  color: #ffffff !important;
+  background: var(--cad-blue-700) !important;
+  box-shadow: 0 2px 8px -1px rgba(29, 78, 216, 0.4);
+}
+
+/* --------------------------------------------------------------------
+   Modals & Overlays
+   -------------------------------------------------------------------- */
+.cad-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.cad-modal-window {
+  background: var(--cad-glass-bg);
+  backdrop-filter: blur(var(--cad-glass-blur));
+  -webkit-backdrop-filter: blur(var(--cad-glass-blur));
+  border: 1px solid var(--cad-glass-border);
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.8);
+  border-radius: 1.25rem;
+  width: 100%;
+  overflow: hidden;
+  animation: cadModalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cadModalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

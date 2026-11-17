@@ -1,0 +1,30 @@
+# Vercel Ignore File
+# Prevents Vercel from detecting or building Python serverless functions,
+# since all CAD/DWG/DXF compute is hosted on Render.
+
+*.py
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+requirements*.txt
+pyproject.toml
+Procfile
+Dockerfile
+.dockerignore
+.docker_cache/
+render.yaml
+main.py
+web_app/
+dxf2kml/
+dxf2kml.egg-info/
+benchmarks/
+sample/
+projects/
+dependencies/
+tests/
+docs/
+*.dwl
+*.dwl2
+*.docx

@@ -28,6 +28,17 @@ venv.bak/
 .DS_Store
 Thumbs.db
 *.docx
+*.tmp
+
+# Frontend & Next.js Caches
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+.env.local
+frontend/.env.local
+.vercel/
+frontend/.vercel/
 
 # Temporary web uploads & generated KML output
 tmp/
@@ -42,3 +53,4 @@ dependencies/*.deb
 .ruff_cache/
 .mypy_cache/
 *.part
+test_apsac_tile.png
