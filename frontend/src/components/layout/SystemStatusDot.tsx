@@ -121,7 +121,11 @@ export function SystemStatusDot() {
       setSecondsElapsed((prev) => prev + 1);
     }, 1000);
 
+    let attempts = 0;
+    const maxAttempts = 24; // 24 * 2.5s = 60s timeout
+
     pollRef.current = setInterval(async () => {
+      attempts++;
       const alive = await pingHealth();
       if (alive) {
         if (timerRef.current) clearInterval(timerRef.current);
@@ -132,6 +136,12 @@ export function SystemStatusDot() {
         setTimeout(() => {
           setBackendState("online");
         }, 3500);
+      } else if (attempts >= maxAttempts) {
+        // Polling timeout: stop endless background polling and revert state
+        if (timerRef.current) clearInterval(timerRef.current);
+        if (pollRef.current) clearInterval(pollRef.current);
+        setBackendState("sleeping");
+        setIsActivating(false);
       }
     }, 2500);
   };

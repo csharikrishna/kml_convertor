@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useGisStore } from "../src/stores/useGisStore";
+import { useCadastralStore, SurveyPlotRecord } from "../src/stores/useCadastralStore";
 import type { GeoJsonFeatureCollection } from "../src/types/geojson";
 
 describe("useGisStore State Architecture", () => {
@@ -95,5 +96,43 @@ describe("useGisStore State Architecture", () => {
     expect(state.measurePoints).toHaveLength(0);
     expect(state.totalMeasureDistance).toBe(0);
     expect(state.lastSegmentDistance).toBe(0);
+  });
+
+  it("handles cadastral parcel selection and URL state synchronization", () => {
+    const mockPlot: SurveyPlotRecord = {
+      survey_no: "160",
+      village: "TestVillage",
+      mandal: "TestMandal",
+      district: "TestDistrict",
+      total_area_m2: 40000,
+      total_acres: 9.88,
+      total_ac_cts: "9 Ac 88 Cts",
+      canal_passing: true,
+      acquired_area_m2: 8000,
+      acquired_acres: 1.98,
+      balance_area_m2: 32000,
+      balance_acres: 7.9,
+      chainage_range: "KM 218.200",
+      canal_length_m: 350,
+      canal_width_m: 25,
+      bounds: [
+        [14.675, 77.28],
+        [14.685, 77.29],
+      ],
+    };
+
+    const store = useCadastralStore.getState();
+    store.setSelectedPlot(mockPlot);
+
+    const updated = useCadastralStore.getState();
+    expect(updated.selectedPlot?.survey_no).toBe("160");
+    expect(updated.isRightPanelOpen).toBe(true);
+    expect(updated.targetFlyToBounds).toEqual(mockPlot.bounds);
+
+    // Clear selection
+    store.clearSelection();
+    const cleared = useCadastralStore.getState();
+    expect(cleared.selectedPlot).toBeNull();
+    expect(cleared.isRightPanelOpen).toBe(false);
   });
 });

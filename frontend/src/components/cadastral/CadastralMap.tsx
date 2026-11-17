@@ -49,16 +49,16 @@ function shiftLatLng(lat: number, lon: number, dx: number, dy: number): [number,
 function applyOffsetToGeoJSON(geojson: any, dx: number, dy: number) {
   if (!geojson || (dx === 0 && dy === 0)) return geojson;
   const clone = JSON.parse(JSON.stringify(geojson));
-  const shiftPoint = (lon: number, lat: number): [number, number] => {
+  const shiftPoint = (lon: number, lat: number, elev?: number): number[] => {
     const latRad = (lat * Math.PI) / 180.0;
     const dLat = dy / 111320.0;
     const dLon = dx / (111320.0 * Math.max(0.01, Math.cos(latRad)));
-    return [lon + dLon, lat + dLat];
+    return elev !== undefined ? [lon + dLon, lat + dLat, elev] : [lon + dLon, lat + dLat];
   };
 
   const shiftCoords = (coords: any): any => {
     if (typeof coords[0] === "number" && typeof coords[1] === "number") {
-      return shiftPoint(coords[0], coords[1]);
+      return shiftPoint(coords[0], coords[1], coords[2]);
     }
     return coords.map(shiftCoords);
   };
@@ -71,6 +71,8 @@ function applyOffsetToGeoJSON(geojson: any, dx: number, dy: number) {
     });
   } else if (clone.type === "Feature" && clone.geometry) {
     clone.geometry.coordinates = shiftCoords(clone.geometry.coordinates);
+  } else if (clone.coordinates && typeof clone.type === "string") {
+    clone.coordinates = shiftCoords(clone.coordinates);
   }
   return clone;
 }
@@ -130,6 +132,7 @@ export function CadastralMap() {
 
   const {
     projectData,
+    currentProjectId,
     baseMap,
     setBaseMap,
     layers,
@@ -170,6 +173,14 @@ export function CadastralMap() {
   const [calibrationOffset, setCalibrationOffset] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
   const [isCalibrateOpen, setIsCalibrateOpen] = useState(false);
   const [calibrateStep, setCalibrateStep] = useState<number>(1);
+  const canvasRendererRef = useRef<L.Canvas | null>(null);
+  const fittedProjectIdRef = useRef<string | null>(null);
+
+  // Reset calibration and fitted-bounds tracker when switching projects
+  useEffect(() => {
+    setCalibrationOffset({ dx: 0, dy: 0 });
+    fittedProjectIdRef.current = null;
+  }, [projectData?.project_id, currentProjectId]);
 
 // Measurement state is powered reactively by useCadastralStore
   const isDraggingMeasureRef = useRef(false);
@@ -182,7 +193,12 @@ export function CadastralMap() {
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
+    const canvasRenderer = L.canvas({ padding: 0.5, tolerance: 5 });
+    canvasRendererRef.current = canvasRenderer;
+
     const map = L.map(mapContainerRef.current, {
+      preferCanvas: true,
+      renderer: canvasRenderer,
       zoomControl: false,
       attributionControl: false,
       center: [14.67, 77.28],
@@ -423,18 +439,8 @@ export function CadastralMap() {
       const shiftedPlots = applyOffsetToGeoJSON(projectData.layers.survey_plots, dx, dy);
       plotsLayerRef.current = L.geoJSON(shiftedPlots, {
         style: (feature) => {
-          const isSelected = selectedPlot?.survey_no === feature?.properties?.survey_no;
           const isAffected = feature?.properties?.canal_passing;
           const isPoramboke = feature?.properties?.is_poramboke;
-
-          if (isSelected) {
-            return {
-              color: "#f59e0b",
-              weight: 3.5,
-              fillColor: isAffected ? "#10b981" : "#3b82f6",
-              fillOpacity: Math.min(0.38, plotsOp + 0.1),
-            };
-          }
 
           if (isPoramboke) {
             return {
@@ -630,21 +636,23 @@ export function CadastralMap() {
       }).addTo(map);
     }
 
-    // Fit initial bounds if available
+    // Fit initial bounds if available (only once per project to prevent viewport resets on layer toggles/opacity changes)
+    const projId = projectData.project_id || currentProjectId;
     if (plotsLayerRef.current && plotsLayerRef.current.getLayers().length > 0) {
       const bounds = plotsLayerRef.current.getBounds();
-      if (bounds.isValid() && !targetFlyToBounds && !selectedPlot) {
+      if (bounds.isValid() && !targetFlyToBounds && !selectedPlot && fittedProjectIdRef.current !== projId) {
+        fittedProjectIdRef.current = projId;
         map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     projectData,
     layers,
     layerOpacity,
-    selectedPlot,
     setSelectedPlot,
     setHoveredPlot,
-    targetFlyToBounds,
+    setMeasurePoints,
     calibrationOffset,
   ]);
 
@@ -1020,6 +1028,7 @@ export function CadastralMap() {
     currentZoom,
     selectedPlot,
     setSelectedPlot,
+    setMeasurePoints,
     calibrationOffset,
   ]);
 
@@ -1050,6 +1059,25 @@ export function CadastralMap() {
 
     const dx = calibrationOffset.dx;
     const dy = calibrationOffset.dy;
+
+    // Highlight selected plot boundary with golden amber glowing border
+    if (layers.survey_plots && projectData.layers?.survey_plots?.features) {
+      const feat = projectData.layers.survey_plots.features.find(
+        (f: any) => String(f.properties?.survey_no) === String(selectedPlot.survey_no)
+      );
+      if (feat) {
+        const shiftedFeat = applyOffsetToGeoJSON(feat, dx, dy);
+        const plotHighlight = L.geoJSON(shiftedFeat, {
+          style: {
+            color: "#f59e0b",
+            weight: 3.5,
+            fillColor: selectedPlot.canal_passing ? "#10b981" : "#3b82f6",
+            fillOpacity: Math.min(0.40, (layerOpacity.survey_plots ?? 0.3) + 0.1),
+          },
+        });
+        group.addLayer(plotHighlight);
+      }
+    }
 
     // Highlight canal alignment centerline
     if (
@@ -1110,9 +1138,11 @@ export function CadastralMap() {
     selectedPlot,
     highlightedIntersection,
     projectData,
+    layers.survey_plots,
     layers.canal_alignment,
     layers.canal_buffer,
     layers.roads,
+    layerOpacity.survey_plots,
     calibrationOffset,
   ]);
 
@@ -1383,7 +1413,7 @@ export function CadastralMap() {
 
       group.addLayer(marker);
     });
-  }, [measurePoints, measurementMode, measureAreaM2]);
+  }, [measurePoints, measurementMode, measureAreaM2, setMeasurePoints]);
 
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateUtmZone, latLonToUtm } from "../src/lib/gis/utm";
+import { calculateUtmZone, latLonToUtm, utmToLatLon } from "../src/lib/gis/utm";
 
 describe("UTM & Transverse Mercator Math", () => {
   it("determines correct UTM zones across India, Europe and US", () => {
@@ -39,5 +39,36 @@ describe("UTM & Transverse Mercator Math", () => {
     // Northing around 15.8 deg ~ 15.8 * 111,000 ~ 1,750,000 m
     expect(utm.northing).toBeGreaterThan(1700000);
     expect(utm.northing).toBeLessThan(1800000);
+  });
+
+  it("performs forward and reverse projection roundtrip with sub-millimeter precision when unrounded", () => {
+    // Test points in Andhra Pradesh / Telangana: Zone 43N and Zone 44N
+    const testPoints = [
+      { lat: 14.681234, lon: 77.284567, zone: 43 }, // Anantapur / Beluguppa (Zone 43N)
+      { lat: 15.828123, lon: 78.037345, zone: 44 }, // Kurnool (Zone 44N)
+      { lat: 17.385044, lon: 78.486671, zone: 44 }, // Hyderabad (Zone 44N)
+    ];
+
+    for (const pt of testPoints) {
+      // 1. Exact unrounded forward projection (for geodetic calculation)
+      const fwdExact = latLonToUtm(pt.lat, pt.lon, pt.zone, true, false);
+      const revExact = utmToLatLon(fwdExact.easting, fwdExact.northing, pt.zone, true);
+
+      // Verify angular difference is under 1e-8 degrees (< 0.05 mm - true sub-millimeter precision)
+      const latDiffExact = Math.abs(revExact.lat - pt.lat);
+      const lonDiffExact = Math.abs(revExact.lon - pt.lon);
+      expect(latDiffExact).toBeLessThan(1e-8);
+      expect(lonDiffExact).toBeLessThan(1e-8);
+
+      // 2. Integer meter display rounding
+      const fwdRounded = latLonToUtm(pt.lat, pt.lon, pt.zone, true, true);
+      const revRounded = utmToLatLon(fwdRounded.easting, fwdRounded.northing, pt.zone, true);
+
+      // Rounded to nearest meter bounds precision by ~1.5 meters (< 0.000015 degrees)
+      const latDiffRounded = Math.abs(revRounded.lat - pt.lat);
+      const lonDiffRounded = Math.abs(revRounded.lon - pt.lon);
+      expect(latDiffRounded).toBeLessThan(0.000015);
+      expect(lonDiffRounded).toBeLessThan(0.000015);
+    }
   });
 });

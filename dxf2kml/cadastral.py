@@ -312,8 +312,23 @@ def analyze_cadastral_dwg(
             except Exception as ex:
                 logger.warning("Error during canal intersection: {}", ex)
 
-        whole_ac = math.floor(t_acres)
-        cents = round((t_acres - whole_ac) * 100.0, 1)
+        # Statutory acreage conservation: Total = Acquired + Balance
+        total_ac_rounded = round(t_acres, 2)
+        total_m2_rounded = round(t_area_m2, 1)
+
+        if c_passing:
+            acq_ac_rounded = min(total_ac_rounded, round(acq_acres, 2))
+            bal_ac_rounded = round(total_ac_rounded - acq_ac_rounded, 2)
+            acq_m2_rounded = min(total_m2_rounded, round(acq_area_m2, 1))
+            bal_m2_rounded = round(total_m2_rounded - acq_m2_rounded, 1)
+        else:
+            acq_ac_rounded = 0.0
+            bal_ac_rounded = total_ac_rounded
+            acq_m2_rounded = 0.0
+            bal_m2_rounded = total_m2_rounded
+
+        whole_ac = math.floor(total_ac_rounded)
+        cents = round((total_ac_rounded - whole_ac) * 100.0, 1)
         ac_cts_str = f"{whole_ac} Ac {cents} Cts"
 
         return {
@@ -323,14 +338,14 @@ def analyze_cadastral_dwg(
             "village": village_name,
             "mandal": mandal_name,
             "district": district_name,
-            "total_area_m2": round(t_area_m2, 1),
-            "total_acres": round(t_acres, 2),
+            "total_area_m2": total_m2_rounded,
+            "total_acres": total_ac_rounded,
             "total_ac_cts": ac_cts_str,
             "canal_passing": c_passing,
-            "acquired_area_m2": round(acq_area_m2, 1),
-            "acquired_acres": round(acq_acres, 2),
-            "balance_area_m2": round(bal_area_m2, 1),
-            "balance_acres": round(bal_acres, 2),
+            "acquired_area_m2": acq_m2_rounded,
+            "acquired_acres": acq_ac_rounded,
+            "balance_area_m2": bal_m2_rounded,
+            "balance_acres": bal_ac_rounded,
             "chainage_range": ch_str,
             "canal_length_m": round(c_length_m, 1),
             "canal_width_m": canal_buffer_meters * 2.0 if c_passing else 0.0,

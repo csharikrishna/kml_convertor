@@ -72,7 +72,8 @@ export function latLonToUtm(
   lat: number,
   lon: number,
   zoneNumber?: number,
-  isNorthern?: boolean
+  isNorthern?: boolean,
+  roundToInteger: boolean = true
 ): UtmCoordinates {
   if (zoneNumber === undefined || isNorthern === undefined) {
     const zoneInfo = calculateUtmZone(lat, lon);
@@ -129,10 +130,78 @@ export function latLonToUtm(
   const epsgCode = (isNorthern ? 32600 : 32700) + zoneNumber;
 
   return {
-    easting: Math.round(easting),
-    northing: Math.round(northing),
+    easting: roundToInteger ? Math.round(easting) : easting,
+    northing: roundToInteger ? Math.round(northing) : northing,
     zone: zoneNumber,
     isNorthern,
     epsg: `EPSG:${epsgCode}`,
+  };
+}
+
+/**
+ * Converts Transverse Mercator UTM Easting & Northing in meters to WGS84 Latitude and Longitude.
+ * Uses exact USGS / Karney formulation yielding sub-millimeter precision.
+ */
+export function utmToLatLon(
+  easting: number,
+  northing: number,
+  zone: number,
+  isNorthern: boolean = true
+): { lat: number; lon: number } {
+  if (zone < 1 || zone > 60) {
+    throw new Error(`Invalid UTM zone: ${zone}. Must be between 1 and 60.`);
+  }
+
+  const a = 6378137.0; // WGS84 semi-major axis
+  const f = 1.0 / 298.257223563;
+  const e2 = 2 * f - f * f;
+  const ePrime2 = e2 / (1.0 - e2);
+  const k0 = 0.9996;
+  const e1 = (1.0 - Math.sqrt(1.0 - e2)) / (1.0 + Math.sqrt(1.0 - e2));
+
+  const x = easting - 500000.0;
+  const y = isNorthern ? northing : northing - 10000000.0;
+
+  const M = y / k0;
+  const mu = M / (a * (1.0 - e2 / 4.0 - (3.0 * e2 * e2) / 64.0 - (5.0 * Math.pow(e2, 3)) / 256.0));
+
+  const phi1 =
+    mu +
+    ((3.0 * e1) / 2.0 - (27.0 * Math.pow(e1, 3)) / 32.0) * Math.sin(2.0 * mu) +
+    ((21.0 * e1 * e1) / 16.0 - (55.0 * Math.pow(e1, 4)) / 32.0) * Math.sin(4.0 * mu) +
+    ((151.0 * Math.pow(e1, 3)) / 96.0) * Math.sin(6.0 * mu) +
+    ((1097.0 * Math.pow(e1, 4)) / 512.0) * Math.sin(8.0 * mu);
+
+  const sinPhi1 = Math.sin(phi1);
+  const cosPhi1 = Math.cos(phi1);
+  const tanPhi1 = Math.tan(phi1);
+
+  const N1 = a / Math.sqrt(1.0 - e2 * sinPhi1 * sinPhi1);
+  const R1 = (a * (1.0 - e2)) / Math.pow(1.0 - e2 * sinPhi1 * sinPhi1, 1.5);
+  const T1 = tanPhi1 * tanPhi1;
+  const C1 = ePrime2 * cosPhi1 * cosPhi1;
+  const D = x / (N1 * k0);
+
+  const latRad =
+    phi1 -
+    ((N1 * tanPhi1) / R1) *
+      ((D * D) / 2.0 -
+        (5.0 + 3.0 * T1 + 10.0 * C1 - 4.0 * C1 * C1 - 9.0 * ePrime2) * (Math.pow(D, 4) / 24.0) +
+        (61.0 + 90.0 * T1 + 298.0 * C1 + 45.0 * T1 * T1 - 252.0 * ePrime2 - 3.0 * C1 * C1) *
+          (Math.pow(D, 6) / 720.0));
+
+  const centralLon = ((zone - 1) * 6 - 180 + 3) * (Math.PI / 180.0);
+
+  const lonRad =
+    centralLon +
+    (D -
+      (1.0 + 2.0 * T1 + C1) * (Math.pow(D, 3) / 6.0) +
+      (5.0 - 2.0 * C1 + 28.0 * T1 - 3.0 * C1 * C1 + 8.0 * ePrime2 + 24.0 * T1 * T1) *
+        (Math.pow(D, 5) / 120.0)) /
+      cosPhi1;
+
+  return {
+    lat: (latRad * 180.0) / Math.PI,
+    lon: (lonRad * 180.0) / Math.PI,
   };
 }

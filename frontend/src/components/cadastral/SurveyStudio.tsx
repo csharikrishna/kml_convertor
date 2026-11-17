@@ -79,6 +79,43 @@ export function SurveyStudio() {
     }
   }, [urlSurveyNo, projectData, selectedPlot, setSelectedPlot, setTargetFlyToBounds]);
 
+  // Browser Back/Forward (popstate) & Keyboard Escape handling
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const params = new URL(window.location.href).searchParams;
+        const pId = params.get("project");
+        const sy = params.get("sy");
+
+        if (pId && pId !== currentProjectId) {
+          loadProject(pId, sy || undefined);
+        } else if (sy && projectData?.survey_register) {
+          const match =
+            useCadastralStore.getState().searchIndex?.findExactPlot(sy) ||
+            findCadastralPlot(projectData.survey_register, sy);
+          if (match && selectedPlot?.survey_no !== match.survey_no) {
+            setSelectedPlot(match, { replace: true });
+          }
+        } else if (!sy && selectedPlot) {
+          useCadastralStore.getState().clearSelection({ replace: true });
+        }
+      } catch {}
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        useCadastralStore.getState().clearSelection();
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [currentProjectId, projectData, selectedPlot, loadProject, setSelectedPlot]);
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 select-none">
       {/* Top Application Bar */}

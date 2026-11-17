@@ -358,6 +358,41 @@ def _copy_upload(upload: UploadFile, dest: Path) -> int:
     return written
 
 
+def validate_cad_signature(path: Path) -> None:
+    """
+    Validate CAD file signature by examining initial bytes.
+    - DWG must begin with 'AC10' (AC10xx version marker).
+    - DXF must contain standard structural group codes (starts with group 0 or 999).
+    """
+    if not path.is_file():
+        raise InputFileError("Uploaded file not found.")
+
+    ext = path.suffix.lower()
+    if ext == ".dwg":
+        with open(path, "rb") as f:
+            header = f.read(6)
+        if len(header) < 4 or not header.startswith(b"AC10"):
+            raise InputFileError("Invalid DWG file: Missing AutoCAD DWG header signature (AC10xx).")
+    elif ext == ".dxf":
+        with open(path, "rb") as f:
+            header_bytes = f.read(2048)
+        if not header_bytes:
+            raise InputFileError("Uploaded DXF file is empty.")
+
+        # Support AutoCAD Binary DXF signature
+        if header_bytes.startswith(b"AutoCAD Binary DXF"):
+            return
+
+        try:
+            text_preview = header_bytes.decode("latin-1", errors="ignore")
+        except Exception:
+            raise InputFileError("Invalid DXF file: Binary data found where ASCII text was expected.")
+
+        lines = [line.strip().lstrip("\ufeff") for line in text_preview.splitlines() if line.strip()]
+        if not lines or not any(lines[i] in ("0", "999") for i in range(min(5, len(lines)))):
+            raise InputFileError("Invalid DXF file: Missing standard AutoCAD DXF structural markers.")
+
+
 _ERROR_STATUS = {InputFileError: 400, CRSError: 400, DWGConversionError: 422, LimitExceededError: 413}
 
 
@@ -495,6 +530,7 @@ def convert_file(
     try:
         job_dir.mkdir(parents=True)
         input_size = _copy_upload(file, input_path)
+        validate_cad_signature(input_path)
         result = convert(input_path, output_path, cfg, output_format=fmt,
                          collect_preview=True, preview_max_vertices=PREVIEW_MAX_VERTICES,
                          document_name=Path(raw_filename).stem)
@@ -937,6 +973,12 @@ async def create_village_project(
     drawing_path = proj_dir / f"drawing{dwg_suffix}"
     with open(drawing_path, "wb") as f:
         shutil.copyfileobj(drawing_file.file, f)
+
+    try:
+        validate_cad_signature(drawing_path)
+    except InputFileError as sig_err:
+        shutil.rmtree(proj_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(sig_err)) from None
 
     # 2. Run Cadastral Analysis
     v_clean = village_name.strip() or safe_vname.capitalize()

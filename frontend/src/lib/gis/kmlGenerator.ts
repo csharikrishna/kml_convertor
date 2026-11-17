@@ -26,12 +26,59 @@ function coordinatesToKmlString(coords: [number, number][]): string {
     .join(" ");
 }
 
+/**
+ * Ensures a LinearRing is strictly closed (first point equals last point) per OGC KML 2.2 spec.
+ */
+function ensureClosedRing(coords: [number, number][]): [number, number][] {
+  if (!coords || coords.length === 0) return coords;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    return [...coords, [first[0], first[1]]];
+  }
+  return coords;
+}
+
+/**
+ * Builds OGC KML 2.2 Polygon XML with strict outer ring and inner rings (holes) support.
+ * Complies with OGC KML 2.2 schema (Polygon does not accept tessellate element).
+ */
+function polygonToKmlGeometryXml(rings: [number, number][][]): string {
+  if (!rings || rings.length === 0) return "";
+  const outer = ensureClosedRing(rings[0]);
+  const holes = rings.slice(1);
+
+  let holesXml = "";
+  for (const hole of holes) {
+    if (hole && hole.length >= 3) {
+      const closedHole = ensureClosedRing(hole);
+      holesXml += `
+        <innerBoundaryIs>
+          <LinearRing>
+            <coordinates>${coordinatesToKmlString(closedHole)}</coordinates>
+          </LinearRing>
+        </innerBoundaryIs>`;
+    }
+  }
+
+  return `
+      <Polygon>
+        <altitudeMode>clampToGround</altitudeMode>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>${coordinatesToKmlString(outer)}</coordinates>
+          </LinearRing>
+        </outerBoundaryIs>${holesXml}
+      </Polygon>`;
+}
+
 export function generatePlotKml(
   plot: SurveyPlotRecord,
   projectData?: CadastralProjectData | null
 ): string {
   // Find feature geometry in survey_plots GeoJSON
-  let polyCoordsList: [number, number][][] = [];
+  // Each element in polyRingsList is an array of rings: [outerRing, ...holeRings]
+  let polyRingsList: [number, number][][][] = [];
 
   if (projectData?.layers?.survey_plots?.features) {
     const feature = projectData.layers.survey_plots.features.find(
@@ -39,25 +86,25 @@ export function generatePlotKml(
     );
     if (feature?.geometry) {
       if (feature.geometry.type === "Polygon") {
-        polyCoordsList.push(feature.geometry.coordinates[0]);
+        polyRingsList.push(feature.geometry.coordinates);
       } else if (feature.geometry.type === "MultiPolygon") {
-        feature.geometry.coordinates.forEach((poly: any) => {
-          if (poly && poly[0]) polyCoordsList.push(poly[0]);
+        feature.geometry.coordinates.forEach((polyRings: any) => {
+          if (polyRings && polyRings.length > 0) polyRingsList.push(polyRings);
         });
       }
     }
   }
 
   // Fallback to plot bounds if geometry not found
-  if (polyCoordsList.length === 0 && plot.bounds) {
+  if (polyRingsList.length === 0 && plot.bounds) {
     const [[minLat, minLng], [maxLat, maxLng]] = plot.bounds;
-    polyCoordsList.push([
+    polyRingsList.push([[
       [minLng, minLat],
       [maxLng, minLat],
       [maxLng, maxLat],
       [minLng, maxLat],
       [minLng, minLat],
-    ]);
+    ]]);
   }
 
   const centerLat = plot.center?.[0] ?? (plot.bounds ? (plot.bounds[0][0] + plot.bounds[1][0]) / 2 : 14.68);
@@ -93,23 +140,13 @@ export function generatePlotKml(
   ]]>`;
 
   let polygonsXml = "";
-  polyCoordsList.forEach((coords, idx) => {
+  polyRingsList.forEach((rings, idx) => {
     polygonsXml += `
     <Placemark>
-      <name>Survey Plot ${plot.survey_no}${polyCoordsList.length > 1 ? ` (Part ${idx + 1})` : ''}</name>
+      <name>Survey Plot ${plot.survey_no}${polyRingsList.length > 1 ? ` (Part ${idx + 1})` : ''}</name>
       <description>${descriptionHtml}</description>
       <styleUrl>#plotStyle_${isAffected ? 'affected' : 'normal'}</styleUrl>
-      <Polygon>
-        <extrude>1</extrude>
-        <altitudeMode>clampToGround</altitudeMode>
-        <outerBoundaryIs>
-          <LinearRing>
-            <coordinates>
-              ${coordinatesToKmlString(coords)}
-            </coordinates>
-          </LinearRing>
-        </outerBoundaryIs>
-      </Polygon>
+      ${polygonToKmlGeometryXml(rings)}
     </Placemark>`;
   });
 
@@ -165,17 +202,17 @@ export function generateProjectKml(projectData: CadastralProjectData): string {
   let plotsXml = "";
   plots.forEach((feat: any) => {
     const p = feat.properties || {};
-    const coordsList: [number, number][][] = [];
+    const ringsList: [number, number][][][] = [];
     if (feat.geometry?.type === "Polygon") {
-      coordsList.push(feat.geometry.coordinates[0]);
+      ringsList.push(feat.geometry.coordinates);
     } else if (feat.geometry?.type === "MultiPolygon") {
-      feat.geometry.coordinates.forEach((poly: any) => {
-        if (poly && poly[0]) coordsList.push(poly[0]);
+      feat.geometry.coordinates.forEach((polyRings: any) => {
+        if (polyRings && polyRings.length > 0) ringsList.push(polyRings);
       });
     }
 
     const isAff = Boolean(p.canal_passing);
-    coordsList.forEach((c) => {
+    ringsList.forEach((rings) => {
       plotsXml += `
       <Placemark>
         <name>Sy ${p.survey_no || ''}</name>
@@ -187,15 +224,7 @@ export function generateProjectKml(projectData: CadastralProjectData): string {
           <b>Pattadar:</b> ${p.pattadar_name || 'N/A'}
         ]]></description>
         <styleUrl>#${isAff ? 'style_affected' : 'style_plot'}</styleUrl>
-        <Polygon>
-          <extrude>1</extrude>
-          <altitudeMode>clampToGround</altitudeMode>
-          <outerBoundaryIs>
-            <LinearRing>
-              <coordinates>${coordinatesToKmlString(c)}</coordinates>
-            </LinearRing>
-          </outerBoundaryIs>
-        </Polygon>
+        ${polygonToKmlGeometryXml(rings)}
       </Placemark>`;
     });
   });
@@ -208,7 +237,6 @@ export function generateProjectKml(projectData: CadastralProjectData): string {
         <name>Canal Alignment Centerline</name>
         <styleUrl>#style_canal_line</styleUrl>
         <LineString>
-          <extrude>1</extrude>
           <tessellate>1</tessellate>
           <altitudeMode>clampToGround</altitudeMode>
           <coordinates>${coordinatesToKmlString(feat.geometry.coordinates)}</coordinates>
@@ -224,15 +252,7 @@ export function generateProjectKml(projectData: CadastralProjectData): string {
       <Placemark>
         <name>Canal Proposed RoW Corridor</name>
         <styleUrl>#style_buffer</styleUrl>
-        <Polygon>
-          <extrude>1</extrude>
-          <altitudeMode>clampToGround</altitudeMode>
-          <outerBoundaryIs>
-            <LinearRing>
-              <coordinates>${coordinatesToKmlString(feat.geometry.coordinates[0])}</coordinates>
-            </LinearRing>
-          </outerBoundaryIs>
-        </Polygon>
+        ${polygonToKmlGeometryXml(feat.geometry.coordinates)}
       </Placemark>`;
     }
   });

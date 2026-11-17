@@ -1,4 +1,12 @@
 import { accumulateDistances, calculatePolygonAreaM2 } from "@/lib/gis/geodesy";
+import { CadastralSearchIndex } from "@/lib/gis/searchIndex";
+import {
+  loadProjectOfflineFirst,
+  saveCustomProjectToIDB,
+  getCustomProjectFromIDB,
+  getAllCustomProjectsFromIDB,
+  deleteCustomProjectFromIDB,
+} from "@/lib/cache/cadastralCache";
 import { create } from "zustand";
 
 export interface SurveyPlotRecord {
@@ -202,13 +210,15 @@ interface CadastralState {
   setSearchQuery: (q: string) => void;
   targetFlyToBounds: [[number, number], [number, number]] | null;
   setTargetFlyToBounds: (bounds: [[number, number], [number, number]] | null) => void;
+  searchIndex: CadastralSearchIndex | null;
+  isCached: boolean;
 
   // Actions
   fetchProjectsList: () => Promise<void>;
-  loadProject: (projectId: string) => Promise<void>;
+  loadProject: (projectId: string, targetSurveyNo?: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<boolean>;
-  setSelectedPlot: (plot: SurveyPlotRecord | null) => void;
-  clearSelection: () => void;
+  setSelectedPlot: (plot: SurveyPlotRecord | null, options?: { replace?: boolean } | any) => void;
+  clearSelection: (options?: { replace?: boolean } | any) => void;
   setHoveredPlot: (plot: SurveyPlotRecord | null) => void;
   setProjectData: (data: CadastralProjectData) => void;
 }
@@ -312,20 +322,23 @@ export function findCadastralPlot(
   return null;
 }
 
-export function saveLocalCustomProject(meta: CadastralProjectMeta, data: CadastralProjectData) {
+export async function saveLocalCustomProject(meta: CadastralProjectMeta, data: CadastralProjectData) {
   if (typeof window === "undefined") return;
   try {
     const existing = getLocalCustomProjects().filter((p) => p.id !== meta.id);
     localStorage.setItem(STORAGE_KEY_CUSTOM_PROJECTS, JSON.stringify([meta, ...existing]));
-    localStorage.setItem(`${STORAGE_PREFIX_PROJECT_DATA}${meta.id}`, JSON.stringify(data));
+    // Save heavy dataset to IndexedDB (bypasses 5MB localStorage limits)
+    await saveCustomProjectToIDB(meta, data);
   } catch (e) {
-    console.warn("Failed to persist project in local storage:", e);
+    console.warn("Failed to persist custom project:", e);
   }
 }
 
-export function getLocalProjectData(projectId: string): CadastralProjectData | null {
+export async function getLocalProjectData(projectId: string): Promise<CadastralProjectData | null> {
   if (typeof window === "undefined") return null;
   try {
+    const idbData = await getCustomProjectFromIDB(projectId);
+    if (idbData) return idbData;
     const raw = localStorage.getItem(`${STORAGE_PREFIX_PROJECT_DATA}${projectId}`);
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -333,12 +346,13 @@ export function getLocalProjectData(projectId: string): CadastralProjectData | n
   }
 }
 
-export function deleteLocalProject(projectId: string) {
+export async function deleteLocalProject(projectId: string) {
   if (typeof window === "undefined") return;
   try {
     const remaining = getLocalCustomProjects().filter((p) => p.id !== projectId);
     localStorage.setItem(STORAGE_KEY_CUSTOM_PROJECTS, JSON.stringify(remaining));
     localStorage.removeItem(`${STORAGE_PREFIX_PROJECT_DATA}${projectId}`);
+    await deleteCustomProjectFromIDB(projectId);
   } catch (e) {
     console.warn("Failed to delete local project:", e);
   }
@@ -384,6 +398,8 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
     },
   ],
   projectData: null,
+  searchIndex: null,
+  isCached: false,
   selectedPlot: null,
   hoveredPlot: null,
   isLoading: false,
@@ -523,7 +539,7 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
   targetFlyToBounds: null,
   setTargetFlyToBounds: (bounds) => set({ targetFlyToBounds: bounds }),
 
-  setSelectedPlot: (plot) => {
+  setSelectedPlot: (plot, options) => {
     set({
       selectedPlot: plot,
       isRightPanelOpen: plot ? true : false,
@@ -532,18 +548,29 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
     if (plot?.bounds) {
       set({ targetFlyToBounds: plot.bounds });
     }
-    // Synchronize browser URL (?sy=...) so deep-linking & sharing reflects the active parcel
+    // Synchronize browser URL (?sy=...) so deep-linking, sharing, and browser back/forward work seamlessly
     if (typeof window !== "undefined") {
       try {
         const newUrl = new URL(window.location.href);
-        if (plot?.survey_no) {
-          newUrl.searchParams.set("sy", String(plot.survey_no));
+        const oldSy = newUrl.searchParams.get("sy");
+        const nextSy = plot?.survey_no ? String(plot.survey_no) : null;
+        if (nextSy) {
+          newUrl.searchParams.set("sy", nextSy);
+        } else {
+          newUrl.searchParams.delete("sy");
         }
-        window.history.replaceState(null, "", newUrl.toString());
+        if (oldSy !== nextSy) {
+          const isReplace = Boolean(options && typeof options === "object" && "replace" in options && options.replace);
+          if (isReplace) {
+            window.history.replaceState(null, "", newUrl.toString());
+          } else {
+            window.history.pushState(null, "", newUrl.toString());
+          }
+        }
       } catch {}
     }
   },
-  clearSelection: () => {
+  clearSelection: (options) => {
     set({
       selectedPlot: null,
       isRightPanelOpen: false,
@@ -553,13 +580,23 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
     if (typeof window !== "undefined") {
       try {
         const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete("sy");
-        window.history.replaceState(null, "", newUrl.toString());
+        if (newUrl.searchParams.has("sy")) {
+          newUrl.searchParams.delete("sy");
+          const isReplace = Boolean(options && typeof options === "object" && "replace" in options && options.replace);
+          if (isReplace) {
+            window.history.replaceState(null, "", newUrl.toString());
+          } else {
+            window.history.pushState(null, "", newUrl.toString());
+          }
+        }
       } catch {}
     }
   },
   setHoveredPlot: (hoveredPlot) => set({ hoveredPlot }),
-  setProjectData: (projectData) => set({ projectData }),
+  setProjectData: (projectData) => {
+    const searchIndex = new CadastralSearchIndex(projectData);
+    set({ projectData, searchIndex });
+  },
 
   fetchProjectsList: async () => {
     let baseProjects: CadastralProjectMeta[] = [];
@@ -610,68 +647,88 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
     set({ projectsList: merged });
   },
 
-  loadProject: async (projectId: string) => {
+  loadProject: async (projectId: string, targetSurveyNo?: string) => {
     set({ isLoading: true, error: null, currentProjectId: projectId });
     try {
-      let data: CadastralProjectData | null = null;
-      try {
-        let res = await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`));
-        if (!res.ok) {
-          res = await fetch(apiEndpoint(`/api/cadastral/sample/${projectId}`));
-        }
-        if (res.ok) {
-          data = await res.json();
-        }
-      } catch (backendErr) {
-        console.warn(`Backend fetch failed for ${projectId}, trying static CDN fallback...`, backendErr);
-      }
-
-      // If backend was unreachable or CORS blocked, load from static CDN
-      if (!data) {
+      const fetchFn = async (): Promise<CadastralProjectData> => {
+        let data: CadastralProjectData | null = null;
         try {
+          let res = await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`));
+          if (!res.ok) {
+            res = await fetch(apiEndpoint(`/api/cadastral/sample/${projectId}`));
+          }
+          if (res.ok) {
+            data = await res.json();
+          }
+        } catch {}
+
+        if (!data) {
           const staticRes = await fetch(`/data/${projectId}.json`);
           if (staticRes.ok) {
             data = await staticRes.json();
           }
-        } catch (staticErr) {
-          console.warn(`Static CDN fetch failed for ${projectId}:`, staticErr);
         }
-      }
 
-      // If still not found, check localStorage persistent custom projects
-      if (!data) {
-        data = getLocalProjectData(projectId);
-      }
+        if (!data) {
+          data = await getLocalProjectData(projectId);
+        }
 
-      if (!data) {
-        throw new Error(`Failed to load project: ${projectId}`);
-      }
+        if (!data) {
+          throw new Error(`Failed to load project: ${projectId}`);
+        }
+        return data;
+      };
 
-      set({ projectData: data, isLoading: false, currentProjectId: projectId });
+      const { data, fromCache } = await loadProjectOfflineFirst(projectId, fetchFn);
+      const searchIndex = new CadastralSearchIndex(data);
 
-      // Initial plot resolution: if URL contains ?sy=..., resolve that specific parcel directly
+      // Initial plot resolution: explicit target > ?sy= in URL > first canal affected parcel > first parcel
       let initialPlot: SurveyPlotRecord | null = null;
+      let urlSy: string | null = null;
       if (typeof window !== "undefined") {
         try {
           const urlParams = new URL(window.location.href).searchParams;
-          const urlSy = urlParams.get("sy");
-          if (urlSy && data.survey_register) {
-            initialPlot = findCadastralPlot(data.survey_register, urlSy);
-          }
+          urlSy = urlParams.get("sy");
         } catch {}
       }
 
-      // Fallback: automatically select the first affected parcel for immediate showcase
+      const lookupQuery = targetSurveyNo || urlSy;
+      if (lookupQuery) {
+        initialPlot = searchIndex.findExactPlot(lookupQuery);
+      }
+
+      // Fallback: automatically select first affected parcel for immediate showcase
       if (!initialPlot && data.survey_register && data.survey_register.length > 0) {
         const affected = data.survey_register.find((p) => p.canal_passing);
         initialPlot = affected || data.survey_register[0];
       }
 
-      if (initialPlot) {
-        set({ selectedPlot: initialPlot, isRightPanelOpen: true });
-        if (initialPlot.bounds) {
-          set({ targetFlyToBounds: initialPlot.bounds });
-        }
+      // Synchronize URL: ?project=...&sy=...
+      if (typeof window !== "undefined") {
+        try {
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.set("project", projectId);
+          if (initialPlot?.survey_no) {
+            newUrl.searchParams.set("sy", String(initialPlot.survey_no));
+          } else {
+            newUrl.searchParams.delete("sy");
+          }
+          window.history.replaceState(null, "", newUrl.toString());
+        } catch {}
+      }
+
+      set({
+        projectData: data,
+        searchIndex,
+        isCached: fromCache,
+        isLoading: false,
+        currentProjectId: projectId,
+        selectedPlot: initialPlot,
+        isRightPanelOpen: Boolean(initialPlot),
+      });
+
+      if (initialPlot?.bounds) {
+        set({ targetFlyToBounds: initialPlot.bounds });
       }
     } catch (err: any) {
       set({ error: err.message || "Failed to load project", isLoading: false });
