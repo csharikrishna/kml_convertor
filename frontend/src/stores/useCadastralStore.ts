@@ -652,43 +652,19 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
 
   fetchProjectsList: async () => {
     let baseProjects: CadastralProjectMeta[] = [];
+
+    // 1. Instant Edge CDN retrieval (~20ms) - Never stall on sleeping backend
     try {
-      const res = await fetch(apiEndpoint("/api/cadastral/projects"));
-      if (res.ok) {
-        const data = await res.json();
-        if (data.projects && Array.isArray(data.projects)) {
-          baseProjects = data.projects;
+      const staticRes = await fetch("/data/projects.json");
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        if (staticData.projects && Array.isArray(staticData.projects)) {
+          baseProjects = staticData.projects;
         }
       }
-      if (baseProjects.length === 0) {
-        const sRes = await fetch(apiEndpoint("/api/cadastral/samples"));
-        if (sRes.ok) {
-          const sData = await sRes.json();
-          if (sData.samples && Array.isArray(sData.samples)) {
-            baseProjects = sData.samples;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to fetch cadastral projects list from backend:", e);
-    }
+    } catch {}
 
-    // Static Edge CDN Fallback if backend returned empty/offline
-    if (baseProjects.length === 0) {
-      try {
-        const staticRes = await fetch("/data/projects.json");
-        if (staticRes.ok) {
-          const staticData = await staticRes.json();
-          if (staticData.projects && Array.isArray(staticData.projects)) {
-            baseProjects = staticData.projects;
-          }
-        }
-      } catch (staticErr) {
-        console.warn("Failed to fetch static projects list:", staticErr);
-      }
-    }
-
-    // Merge with any persistent user-created projects in localStorage (ensures zero data loss on backend sleep)
+    // Merge with any persistent user-created projects in localStorage/IDB
     const localProjects = getLocalCustomProjects();
     const merged = [...baseProjects];
     for (const lp of localProjects) {
@@ -697,6 +673,26 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
       }
     }
     set({ projectsList: merged });
+
+    // 2. Non-blocking background revalidation with backend (short 2.5s timeout)
+    try {
+      const controller = new AbortController();
+      const tId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(apiEndpoint("/api/cadastral/projects"), { signal: controller.signal });
+      clearTimeout(tId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.projects && Array.isArray(data.projects) && data.projects.length > 0) {
+          const freshMerged = [...data.projects];
+          for (const lp of localProjects) {
+            if (!freshMerged.some((p: any) => p.id === lp.id)) {
+              freshMerged.push(lp);
+            }
+          }
+          set({ projectsList: freshMerged });
+        }
+      }
+    } catch {}
   },
 
   loadProject: async (projectId: string, targetSurveyNo?: string) => {
@@ -704,25 +700,42 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
     try {
       const fetchFn = async (): Promise<CadastralProjectData> => {
         let data: CadastralProjectData | null = null;
-        try {
-          let res = await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`));
-          if (!res.ok) {
-            res = await fetch(apiEndpoint(`/api/cadastral/sample/${projectId}`));
-          }
-          if (res.ok) {
-            data = await res.json();
-          }
-        } catch {}
 
-        if (!data) {
+        // 1. Check static Edge CDN first for standard sample projects (konampalle, padamatiyaleru)
+        // This delivers instant zero-latency loads (~30ms) instead of waiting 60s for Render backend cold-start
+        try {
           const staticRes = await fetch(`/data/${projectId}.json`);
           if (staticRes.ok) {
             data = await staticRes.json();
           }
-        }
+        } catch {}
 
+        // 2. Check local client IndexedDB/localStorage for user-uploaded custom projects
         if (!data) {
           data = await getLocalProjectData(projectId);
+        }
+
+        // 3. If not found locally, query backend with an AbortSignal timeout (3000ms)
+        if (!data) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3500);
+            let res = await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`), {
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            if (!res.ok) {
+              const sController = new AbortController();
+              const sTimeout = setTimeout(() => sController.abort(), 3500);
+              res = await fetch(apiEndpoint(`/api/cadastral/sample/${projectId}`), {
+                signal: sController.signal,
+              });
+              clearTimeout(sTimeout);
+            }
+            if (res.ok) {
+              data = await res.json();
+            }
+          } catch {}
         }
 
         if (!data) {

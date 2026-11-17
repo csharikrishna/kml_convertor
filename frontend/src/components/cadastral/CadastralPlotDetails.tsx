@@ -537,7 +537,7 @@ Timestamp: ${new Date().toISOString()}
 
       {/* 2. Survey Plot Inspector Drawer with Origin-Top-Right Compression/Expansion */}
       <aside
-        className={`fixed md:absolute bottom-0 md:bottom-8 right-0 md:right-4 top-auto md:top-3 w-full md:w-[390px] lg:w-[400px] max-h-[85vh] md:max-h-[calc(100vh-80px)] bg-white/98 backdrop-blur-xl border border-slate-900/[0.08] rounded-2xl shadow-[0_20px_50px_rgba(15,23,42,0.18)] z-30 md:z-20 flex flex-col pointer-events-auto text-slate-800 overflow-hidden transform-gpu origin-top-right transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`fixed md:absolute bottom-0 md:bottom-8 right-0 md:right-4 top-auto md:top-3 w-full md:w-[390px] lg:w-[400px] max-h-[85vh] md:max-h-[calc(100vh-80px)] bg-white border border-slate-200/90 rounded-2xl shadow-[0_20px_50px_rgba(15,23,42,0.18)] z-30 md:z-20 flex flex-col pointer-events-auto text-slate-800 overflow-hidden transform-gpu origin-top-right transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isRightPanelOpen
             ? "opacity-100 scale-100 translate-x-0 translate-y-0 pointer-events-auto"
             : "opacity-0 scale-75 translate-x-8 -translate-y-6 pointer-events-none"
@@ -705,7 +705,7 @@ Timestamp: ${new Date().toISOString()}
       </div>
 
       {/* 4. Tab Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs pb-8">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs pb-28">
         {/* ================= TAB 1: OVERVIEW ================= */}
         {activeTab === "summary" && (
           <>
@@ -1186,11 +1186,11 @@ Timestamp: ${new Date().toISOString()}
       </div>
 
       {/* 5. Footer Actions */}
-      <div className="p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 flex items-center justify-between gap-1.5 shadow-[0_-2px_10px_rgba(0,0,0,0.03)] shrink-0 flex-wrap sm:flex-nowrap">
+      <div className="p-2.5 sm:p-3 bg-white border-t border-slate-200/90 flex items-center justify-between gap-1.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] shrink-0 z-20 relative rounded-b-2xl">
         <button
           onClick={handleDownloadReport}
           title="Download Inspection Report TXT"
-          className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-xs active:scale-98"
+          className="h-9 px-2 sm:px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1 sm:gap-1.5 transition-colors shadow-xs active:scale-98 shrink-0 cursor-pointer"
         >
           <FileText className="w-3.5 h-3.5 text-blue-600" />
           <span>Report</span>
@@ -1199,7 +1199,7 @@ Timestamp: ${new Date().toISOString()}
         <button
           onClick={() => setTableModalOpen(true)}
           title="Open Land Plan Schedule Table"
-          className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-xs active:scale-98"
+          className="h-9 px-2 sm:px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1 sm:gap-1.5 transition-colors shadow-xs active:scale-98 shrink-0 cursor-pointer"
         >
           <TableIcon className="w-3.5 h-3.5 text-emerald-600" />
           <span>Schedule</span>
@@ -1208,7 +1208,7 @@ Timestamp: ${new Date().toISOString()}
         <button
           type="button"
           onClick={handleDownloadPlotKml}
-          className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-xs active:scale-98"
+          className="h-9 px-2 sm:px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1 sm:gap-1.5 transition-colors shadow-xs active:scale-98 shrink-0 cursor-pointer"
           title="Download parcel vector KML file"
         >
           <Download className="w-3.5 h-3.5 text-slate-500" />
@@ -1225,7 +1225,7 @@ Timestamp: ${new Date().toISOString()}
               setTimeout(() => setCopiedLink(false), 2000);
             }
           }}
-          className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-xs active:scale-98"
+          className="h-9 px-2 sm:px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1 sm:gap-1.5 transition-colors shadow-xs active:scale-98 shrink-0 cursor-pointer"
           title="Copy direct shareable link for this survey parcel"
         >
           {copiedLink ? (
@@ -1245,7 +1245,7 @@ Timestamp: ${new Date().toISOString()}
           href={`/api/cadastral/export-table/${currentProjectId}`}
           download
           title="Export Survey Register CSV"
-          className="flex-1 h-9 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-[0_2px_8px_rgba(37,99,235,0.25)] active:scale-98"
+          className="flex-1 min-w-[70px] h-9 px-2.5 sm:px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-[0_2px_8px_rgba(37,99,235,0.25)] active:scale-98 shrink-0"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Export</span>

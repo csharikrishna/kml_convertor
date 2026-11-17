@@ -53,10 +53,10 @@ export function SurveyStudio() {
       fetchProjectsList();
       const targetProj = urlProject || currentProjectId;
       if (!projectData || currentProjectId !== targetProj) {
-        loadProject(targetProj);
+        loadProject(targetProj, urlSurveyNo || undefined);
       }
     }
-  }, [fetchProjectsList, loadProject, currentProjectId, projectData, urlProject]);
+  }, [fetchProjectsList, loadProject, currentProjectId, projectData, urlProject, urlSurveyNo]);
 
   // Initial deep-linking: If a survey plot was requested in URL (?sy=...), locate and fly-to once on mount
   useEffect(() => {
