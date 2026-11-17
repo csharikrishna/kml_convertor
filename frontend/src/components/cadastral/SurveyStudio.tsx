@@ -10,7 +10,7 @@ import { CadastralLegend } from "./CadastralLegend";
 import { CadastralTableModal } from "./CadastralTableModal";
 import { CadastralUploadModal } from "./CadastralUploadModal";
 import { ShareModal } from "@/components/sharing/ShareModal";
-import { useCadastralStore } from "@/stores/useCadastralStore";
+import { useCadastralStore, findCadastralPlot } from "@/stores/useCadastralStore";
 import { Loader2 } from "lucide-react";
 
 const CadastralMap = dynamic(
@@ -58,24 +58,18 @@ export function SurveyStudio() {
     }
   }, [fetchProjectsList, loadProject, currentProjectId, projectData, urlProject]);
 
-  // Initial deep-linking: If a survey plot was requested in URL (?sy=236), locate and fly-to once on mount
+  // Initial deep-linking: If a survey plot was requested in URL (?sy=...), locate and fly-to once on mount
   useEffect(() => {
     if (urlSurveyNo && projectData?.survey_register && projectData.survey_register.length > 0) {
       if (deepLinkedPlotRef.current === urlSurveyNo) return;
       deepLinkedPlotRef.current = urlSurveyNo;
 
-      const cleanQuery = urlSurveyNo.trim().toLowerCase();
-      const cleanNum = cleanQuery.replace(/\D+/g, "");
+      // If already matching the current selection, no need to re-select
+      if (selectedPlot && String(selectedPlot.survey_no).trim().toLowerCase() === urlSurveyNo.trim().toLowerCase()) {
+        return;
+      }
 
-      const match = projectData.survey_register.find((p) => {
-        const pNo = p.survey_no.trim().toLowerCase();
-        const pNum = pNo.replace(/\D+/g, "");
-        if (pNo === cleanQuery) return true;
-        if (cleanNum && pNum === cleanNum) return true;
-        if (pNo.includes(cleanQuery) || cleanQuery.includes(pNo)) return true;
-        return false;
-      });
-
+      const match = findCadastralPlot(projectData.survey_register, urlSurveyNo);
       if (match) {
         setSelectedPlot(match);
         if (match.bounds) {
@@ -83,7 +77,7 @@ export function SurveyStudio() {
         }
       }
     }
-  }, [urlSurveyNo, projectData, setSelectedPlot, setTargetFlyToBounds]);
+  }, [urlSurveyNo, projectData, selectedPlot, setSelectedPlot, setTargetFlyToBounds]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 select-none">

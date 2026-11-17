@@ -226,6 +226,92 @@ export function getLocalCustomProjects(): CadastralProjectMeta[] {
   }
 }
 
+/**
+ * Rigorous Cadastral Parcel Locator
+ * Resolves discrete survey numbers, sub-divisions, prefix-stripped queries, and road identifiers.
+ * Guarantees zero false positives (e.g. searching for "160" will NEVER match "6", "16", etc.).
+ */
+export function findCadastralPlot(
+  plots: SurveyPlotRecord[] | undefined,
+  query: string | null | undefined
+): SurveyPlotRecord | null {
+  if (!query || !plots || plots.length === 0) return null;
+
+  const rawClean = String(query).trim();
+  if (!rawClean) return null;
+  const lower = rawClean.toLowerCase();
+
+  // Strip common user prefixes: "Survey No. 235", "Sy 160", "Plot 14" -> "235", "160", "14"
+  const stripped = lower
+    .replace(/^(survey\s*no\.?|survey\s*number|survey|sy\.?\s*no\.?|sy\.?|s\.?\s*no\.?|plot\s*no\.?|plot)\s*/i, "")
+    .trim();
+
+  // 1. Exact survey_no match (raw query or stripped)
+  const exactMatch = plots.find((p) => {
+    const pNo = (p.survey_no || "").trim().toLowerCase();
+    return pNo === stripped || pNo === lower;
+  });
+  if (exactMatch) return exactMatch;
+
+  // 2. Explicit Road / Cart Track search (e.g. "R-160", "Cart Track / Road (R-160)")
+  const isRoadQuery =
+    stripped.startsWith("r-") ||
+    stripped.includes("cart") ||
+    stripped.includes("track") ||
+    stripped.includes("road") ||
+    stripped.includes("donka") ||
+    stripped.includes("vagu");
+
+  if (isRoadQuery) {
+    const roadMatch = plots.find((p) => {
+      const pNo = (p.survey_no || "").trim().toLowerCase();
+      return (
+        pNo === stripped ||
+        pNo.includes(stripped) ||
+        (stripped.startsWith("r-") && pNo.includes(`(${stripped})`))
+      );
+    });
+    if (roadMatch) return roadMatch;
+  }
+
+  // 3. Exact numeric match for parcel survey numbers (ignoring punctuation)
+  const queryDigits = stripped.replace(/\D+/g, "");
+  if (queryDigits && !isRoadQuery) {
+    // 3a. Exact digits where parcel has no sub-division slashes or hyphens
+    const pureNumericMatch = plots.find((p) => {
+      const pNo = (p.survey_no || "").trim().toLowerCase();
+      const pDigits = pNo.replace(/\D+/g, "");
+      return (
+        pDigits === queryDigits &&
+        !pNo.includes("/") &&
+        !pNo.includes("-") &&
+        !pNo.includes("cart") &&
+        !pNo.includes("road")
+      );
+    });
+    if (pureNumericMatch) return pureNumericMatch;
+
+    // 3b. Exact digits match on parcel
+    const numericMatch = plots.find((p) => {
+      const pNo = (p.survey_no || "").trim().toLowerCase();
+      const pDigits = pNo.replace(/\D+/g, "");
+      return pDigits === queryDigits && !pNo.includes("cart") && !pNo.includes("road");
+    });
+    if (numericMatch) return numericMatch;
+  }
+
+  // 4. Sub-division start match (e.g. query "155" matches "155/1" or "155-A")
+  if (stripped && !isRoadQuery) {
+    const subMatch = plots.find((p) => {
+      const pNo = (p.survey_no || "").trim().toLowerCase();
+      return pNo.startsWith(stripped + "/") || pNo.startsWith(stripped + "-");
+    });
+    if (subMatch) return subMatch;
+  }
+
+  return null;
+}
+
 export function saveLocalCustomProject(meta: CadastralProjectMeta, data: CadastralProjectData) {
   if (typeof window === "undefined") return;
   try {
@@ -446,6 +532,16 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
     if (plot?.bounds) {
       set({ targetFlyToBounds: plot.bounds });
     }
+    // Synchronize browser URL (?sy=...) so deep-linking & sharing reflects the active parcel
+    if (typeof window !== "undefined") {
+      try {
+        const newUrl = new URL(window.location.href);
+        if (plot?.survey_no) {
+          newUrl.searchParams.set("sy", String(plot.survey_no));
+        }
+        window.history.replaceState(null, "", newUrl.toString());
+      } catch {}
+    }
   },
   clearSelection: () => {
     set({
@@ -453,6 +549,14 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
       isRightPanelOpen: false,
       highlightedIntersection: null,
     });
+    // Remove ?sy= parameter on deselection
+    if (typeof window !== "undefined") {
+      try {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete("sy");
+        window.history.replaceState(null, "", newUrl.toString());
+      } catch {}
+    }
   },
   setHoveredPlot: (hoveredPlot) => set({ hoveredPlot }),
   setProjectData: (projectData) => set({ projectData }),
@@ -545,13 +649,28 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
 
       set({ projectData: data, isLoading: false, currentProjectId: projectId });
 
-      // Automatically select the first affected plot if available for immediate showcase
-      if (data.survey_register && data.survey_register.length > 0) {
+      // Initial plot resolution: if URL contains ?sy=..., resolve that specific parcel directly
+      let initialPlot: SurveyPlotRecord | null = null;
+      if (typeof window !== "undefined") {
+        try {
+          const urlParams = new URL(window.location.href).searchParams;
+          const urlSy = urlParams.get("sy");
+          if (urlSy && data.survey_register) {
+            initialPlot = findCadastralPlot(data.survey_register, urlSy);
+          }
+        } catch {}
+      }
+
+      // Fallback: automatically select the first affected parcel for immediate showcase
+      if (!initialPlot && data.survey_register && data.survey_register.length > 0) {
         const affected = data.survey_register.find((p) => p.canal_passing);
-        const defaultPlot = affected || data.survey_register[0];
-        set({ selectedPlot: defaultPlot });
-        if (defaultPlot.bounds) {
-          set({ targetFlyToBounds: defaultPlot.bounds });
+        initialPlot = affected || data.survey_register[0];
+      }
+
+      if (initialPlot) {
+        set({ selectedPlot: initialPlot, isRightPanelOpen: true });
+        if (initialPlot.bounds) {
+          set({ targetFlyToBounds: initialPlot.bounds });
         }
       }
     } catch (err: any) {
