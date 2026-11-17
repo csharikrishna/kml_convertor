@@ -45,6 +45,7 @@ export function SurveyStudio() {
   const urlSurveyNo = searchParams?.get("sy");
 
   const initializedRef = useRef(false);
+  const deepLinkedPlotRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!initializedRef.current) {
@@ -57,9 +58,12 @@ export function SurveyStudio() {
     }
   }, [fetchProjectsList, loadProject, currentProjectId, projectData, urlProject]);
 
-  // Robust deep-linking: If a specific survey plot was requested in URL (?sy=236), locate and fly-to directly
+  // Initial deep-linking: If a survey plot was requested in URL (?sy=236), locate and fly-to once on mount
   useEffect(() => {
     if (urlSurveyNo && projectData?.survey_register && projectData.survey_register.length > 0) {
+      if (deepLinkedPlotRef.current === urlSurveyNo) return;
+      deepLinkedPlotRef.current = urlSurveyNo;
+
       const cleanQuery = urlSurveyNo.trim().toLowerCase();
       const cleanNum = cleanQuery.replace(/\D+/g, "");
 
@@ -73,15 +77,13 @@ export function SurveyStudio() {
       });
 
       if (match) {
-        if (selectedPlot?.survey_no !== match.survey_no) {
-          setSelectedPlot(match);
-        }
+        setSelectedPlot(match);
         if (match.bounds) {
           setTargetFlyToBounds(match.bounds);
         }
       }
     }
-  }, [urlSurveyNo, projectData, selectedPlot, setSelectedPlot, setTargetFlyToBounds]);
+  }, [urlSurveyNo, projectData, setSelectedPlot, setTargetFlyToBounds]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 select-none">

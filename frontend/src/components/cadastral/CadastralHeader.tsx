@@ -33,7 +33,7 @@ import {
 import { generateProjectKml, downloadKmlBlob } from "@/lib/gis/kmlGenerator";
 import { GlobalBrandAnchor } from "@/components/layout/GlobalBrandAnchor";
 import { GlobalModeSwitcher } from "@/components/layout/GlobalModeSwitcher";
-import { BackendWakeButton } from "@/components/layout/BackendWakeButton";
+import { SystemStatusDot } from "@/components/layout/SystemStatusDot";
 import { useCadastralStore, SurveyPlotRecord } from "@/stores/useCadastralStore";
 import { useGisStore } from "@/stores/useGisStore";
 
@@ -316,10 +316,18 @@ export function CadastralHeader() {
       if (item.type === "plot" || item.type === "road") {
         if (item.plot) {
           setSelectedPlot(item.plot);
+          // Keep URL in sync so ?sy= reflects the active parcel and prevents deep-link locks!
+          if (typeof window !== "undefined") {
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.set("sy", String(item.plot.survey_no));
+            window.history.replaceState(null, "", newUrl.toString());
+          }
         }
       }
       if (item.bounds) {
         setTargetFlyToBounds(item.bounds);
+      } else if (item.plot?.bounds) {
+        setTargetFlyToBounds(item.plot.bounds);
       }
       if (item.plot) {
         setSearchTerm(String(item.plot.survey_no));
@@ -631,10 +639,10 @@ export function CadastralHeader() {
         </div>
       </div>
 
-      {/* Center: Global Survey Number Search */}
-      <div className="relative flex-1 max-w-xs md:max-w-sm lg:max-w-md mx-2 group" ref={searchRef}>
+      {/* Center: Global Survey Number Search - Large Thick Capsule */}
+      <div className="relative flex-1 max-w-sm md:max-w-md lg:max-w-lg mx-3 group" ref={searchRef}>
         <div className="relative flex items-center">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none group-focus-within:text-blue-600 transition-colors" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none group-focus-within:text-blue-600 transition-colors" />
           <input
             ref={searchInputRef}
             type="text"
@@ -650,7 +658,7 @@ export function CadastralHeader() {
                 ? `Survey No. ${selectedPlot.survey_no} (Active on Map)`
                 : "Search survey plot, village, chainage..."
             }
-            className="w-full h-8.5 pl-9 pr-14 text-xs font-medium rounded-xl border border-slate-200/80 bg-slate-100/60 hover:bg-slate-100/90 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all placeholder:text-slate-400 shadow-2xs"
+            className="w-full h-10 pl-10 pr-12 text-[13px] font-medium rounded-full border-2 border-slate-200/90 bg-white hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all placeholder:text-slate-400 shadow-xs"
           />
           {searchTerm ? (
             <button
@@ -658,13 +666,13 @@ export function CadastralHeader() {
                 setSearchTerm("");
                 setIsSearchOpen(false);
               }}
-              className="absolute right-2.5 text-slate-400 hover:text-slate-600 p-0.5"
+              className="absolute right-2.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded-full transition-colors"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           ) : (
-            <div className="absolute right-2 flex items-center gap-0.5 pointer-events-none">
-              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-bold text-slate-400 bg-white border border-slate-200/90 rounded-md shadow-2xs">
+            <div className="absolute right-3 flex items-center gap-0.5 pointer-events-none">
+              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-bold text-slate-400 bg-slate-50 border border-slate-200 rounded-md shadow-2xs">
                 ⌘K
               </kbd>
             </div>
@@ -673,7 +681,7 @@ export function CadastralHeader() {
 
         {/* Search Results Dropdown */}
         {isSearchOpen && (
-          <div className="absolute top-full left-0 mt-1.5 w-84 sm:w-[420px] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto p-1.5 animate-in fade-in zoom-in-95 duration-100">
+          <div className="absolute top-full left-0 right-0 sm:right-auto sm:w-[460px] mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto p-1.5 animate-in fade-in zoom-in-95 duration-100">
             <div className="px-3.5 py-2 text-[10px] uppercase font-mono tracking-wider text-slate-500 border-b border-slate-100 flex items-center justify-between font-bold bg-slate-50/70">
               <span>Matching Spatial Features</span>
               <span className="px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700 text-[9px] font-bold">
@@ -763,21 +771,9 @@ export function CadastralHeader() {
       </div>
 
       {/* Right Actions Toolbar */}
-      <div className="flex items-center gap-3 shrink-0 whitespace-nowrap">
-        {/* Backend Wake Status Button */}
-        <BackendWakeButton />
-
-        {/* CAD Engine Sync Status */}
-        <div
-          title="GIS Vector Pipeline Active (Shapely + STRtree Synced)"
-          className="hidden 2xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 text-[10px] font-bold font-mono tracking-tight shadow-2xs whitespace-nowrap"
-        >
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="whitespace-nowrap">TOPOLOGY SYNCED</span>
-        </div>
+      <div className="flex items-center gap-2.5 shrink-0 whitespace-nowrap">
+        {/* Unified System & Spatial Status Dot Button */}
+        <SystemStatusDot />
 
         {/* Schedule Table Modal */}
         <button
