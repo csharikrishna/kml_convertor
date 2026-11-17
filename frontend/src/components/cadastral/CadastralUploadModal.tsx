@@ -120,17 +120,29 @@ export function CadastralUploadModal() {
 
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
-      const res = await fetch(`${apiBase}/api/cadastral/projects/create`, {
-        method: "POST",
-        body: formData,
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${apiBase}/api/cadastral/projects/create`, {
+          method: "POST",
+          body: formData,
+        });
+      } catch (directErr) {
+        console.warn("Direct upload to Render blocked or failed, retrying via Next.js proxy route...", directErr);
+        res = await fetch(`/api/cadastral/projects/create`, {
+          method: "POST",
+          body: formData,
+        });
+      }
 
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
 
       if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error("Render compute backend is running an older deployment without the project creation endpoint. In your Render Dashboard, click 'Manual Deploy' > 'Deploy latest commit'.");
+        }
         const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || "Project creation failed");
+        throw new Error(err.detail || `Project creation failed (Status ${res.status})`);
       }
 
       setProcessingStage(4);

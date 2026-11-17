@@ -214,8 +214,9 @@ interface CadastralState {
 }
 
 const apiEndpoint = (path: string) => {
-  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
-  return `${base}${path}`;
+  // Always use same-origin relative path in browser so requests route cleanly through Next.js rewrite proxy.
+  // This completely eliminates cross-origin browser CORS blocks between Vercel and Render.
+  return path;
 };
 
 const DEFAULT_LAYERS: LayerVisibility = {
