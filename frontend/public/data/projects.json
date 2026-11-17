@@ -1,0 +1,40 @@
+﻿{
+    "projects":  [
+                     {
+                         "id":  "konampalle",
+                         "title":  "Konampalle Canal Project (KM 216.300 - 219.750)",
+                         "village":  "Konampalle",
+                         "mandal":  "Beluguppa",
+                         "district":  "Anantapur",
+                         "crs":  "EPSG:32643",
+                         "filename":  "1) KONAMPALLE-KM 216.300 to 217.300 \u0026 218.575 to 219.750.dwg",
+                         "chainage_span":  "KM 216.300 to 219.750",
+                         "is_sample":  true,
+                         "is_custom":  false,
+                         "available":  true,
+                         "plots_count":  351,
+                         "affected_count":  84,
+                         "has_excel":  true,
+                         "has_pdf":  true,
+                         "created_at":  "2024-01-01T00:00:00"
+                     },
+                     {
+                         "id":  "padamatiyaleru",
+                         "title":  "Padamatiyaleru Canal Project (KM 217.300 - 242.350)",
+                         "village":  "Padamatiyaleru",
+                         "mandal":  "Beluguppa",
+                         "district":  "Anantapur",
+                         "crs":  "EPSG:32643",
+                         "filename":  "2) PADAMATIYALERU-KM 217.300 to 218.575 \u0026 219.750 to 223.140 \u0026 236.775 to 242.350.dwg",
+                         "chainage_span":  "KM 217.300 to 242.350",
+                         "is_sample":  true,
+                         "is_custom":  false,
+                         "available":  true,
+                         "plots_count":  907,
+                         "affected_count":  198,
+                         "has_excel":  true,
+                         "has_pdf":  true,
+                         "created_at":  "2024-01-01T00:00:00"
+                     }
+                 ]
+}

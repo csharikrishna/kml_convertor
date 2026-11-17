@@ -169,12 +169,33 @@ if not cors_origins or cors_origins == ["*"]:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost(:\d+)?",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_origin_regex=r".*",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_cors_and_error_headers(request: Request, call_next):
+    """Ensure all responses including errors and preflights carry CORS headers."""
+    if request.method == "OPTIONS":
+        response = Response(status_code=200)
+    else:
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            logger.exception("Unhandled server error: {}", e)
+            response = JSONResponse(status_code=500, content={"detail": str(e)})
+
+    origin = request.headers.get("origin") or "*"
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    return response
 
 
 # --------------------------------------------------------------------------- middleware

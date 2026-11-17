@@ -421,30 +421,65 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
           return;
         }
       }
-      // Fallback
+      // Fallback API route
       const sRes = await fetch(apiEndpoint("/api/cadastral/samples"));
       if (sRes.ok) {
         const sData = await sRes.json();
         if (sData.samples && Array.isArray(sData.samples)) {
           set({ projectsList: sData.samples });
+          return;
         }
       }
     } catch (e) {
-      console.warn("Failed to fetch cadastral projects list:", e);
+      console.warn("Failed to fetch cadastral projects list from backend:", e);
+    }
+
+    // Static Edge CDN Fallback (ensures projects always render even if Render backend is sleeping or blocked)
+    try {
+      const staticRes = await fetch("/data/projects.json");
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        if (staticData.projects && Array.isArray(staticData.projects)) {
+          set({ projectsList: staticData.projects });
+        }
+      }
+    } catch (staticErr) {
+      console.warn("Failed to fetch static projects list:", staticErr);
     }
   },
 
   loadProject: async (projectId: string) => {
     set({ isLoading: true, error: null, currentProjectId: projectId });
     try {
-      let res = await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`));
-      if (!res.ok) {
-        res = await fetch(apiEndpoint(`/api/cadastral/sample/${projectId}`));
+      let data: CadastralProjectData | null = null;
+      try {
+        let res = await fetch(apiEndpoint(`/api/cadastral/project/${projectId}`));
+        if (!res.ok) {
+          res = await fetch(apiEndpoint(`/api/cadastral/sample/${projectId}`));
+        }
+        if (res.ok) {
+          data = await res.json();
+        }
+      } catch (backendErr) {
+        console.warn(`Backend fetch failed for ${projectId}, trying static CDN fallback...`, backendErr);
       }
-      if (!res.ok) {
-        throw new Error(`Failed to load project: ${res.statusText}`);
+
+      // If backend was unreachable or CORS blocked, load from static CDN
+      if (!data) {
+        try {
+          const staticRes = await fetch(`/data/${projectId}.json`);
+          if (staticRes.ok) {
+            data = await staticRes.json();
+          }
+        } catch (staticErr) {
+          console.warn(`Static CDN fetch failed for ${projectId}:`, staticErr);
+        }
       }
-      const data: CadastralProjectData = await res.json();
+
+      if (!data) {
+        throw new Error(`Failed to load project: ${projectId}`);
+      }
+
       set({ projectData: data, isLoading: false, currentProjectId: projectId });
 
       // Automatically select the first affected plot if available for immediate showcase
