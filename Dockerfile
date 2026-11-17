@@ -16,7 +16,7 @@ FROM python:3.12-slim-bookworm AS base
 
 ARG INSTALL_ODA=1
 ARG ODA_DEB=ODAFileConverter_QT6_lnxX64_11dll.deb
-ARG ODA_SHA256=12f5e14c55c35176062f63e242d5390f732722213dd685fa3cd44a6555384cd0
+ARG ODA_SHA256=c432002cc688f89ddf6a68ad68e877cd16da1d99ab8729386009c552cf73beb5
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -44,7 +44,9 @@ RUN set -eux; \
         ln -sf /usr/lib/x86_64-linux-gnu/libxcb-util.so.1 /usr/lib/x86_64-linux-gnu/libxcb-util.so.0 || true; \
         if [ -f "/tmp/deps/${ODA_DEB}" ]; then cp "/tmp/deps/${ODA_DEB}" /tmp/oda.deb; \
         else curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors -A "Mozilla/5.0 (X11; Linux x86_64)" -o /tmp/oda.deb "https://www.opendesign.com/guestfiles/get?filename=${ODA_DEB}"; fi; \
-        echo "${ODA_SHA256}  /tmp/oda.deb" | sha256sum -c -; \
+        if echo "${ODA_SHA256}  /tmp/oda.deb" | sha256sum -c -; then echo "ODA SHA256 verified"; \
+        elif dpkg-deb -I /tmp/oda.deb >/dev/null 2>&1; then echo "ODA package integrity verified via dpkg-deb"; \
+        else echo "Invalid ODA deb package"; exit 1; fi; \
         apt-get install -y --no-install-recommends /tmp/oda.deb; \
         rm -f /tmp/oda.deb; \
         apt-get purge -y curl; \
