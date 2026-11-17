@@ -26,7 +26,9 @@ import {
   FileSpreadsheet,
   FileCode,
   Sparkles,
+  Globe,
 } from "lucide-react";
+import { generateProjectKml, downloadKmlBlob } from "@/lib/gis/kmlGenerator";
 import { GlobalBrandAnchor } from "@/components/layout/GlobalBrandAnchor";
 import { GlobalModeSwitcher } from "@/components/layout/GlobalModeSwitcher";
 import { BackendWakeButton } from "@/components/layout/BackendWakeButton";
@@ -279,6 +281,13 @@ export function CadastralHeader() {
     a.download = `${currentProjectId}_cadastral_layers.geojson`;
     a.click();
     URL.revokeObjectURL(url);
+    setIsExportDropdownOpen(false);
+  };
+
+  const handleExportKml = () => {
+    if (!projectData) return;
+    const kml = generateProjectKml(projectData);
+    downloadKmlBlob(kml, `${currentProjectId}_cadastral_3d.kml`);
     setIsExportDropdownOpen(false);
   };
 
@@ -679,6 +688,17 @@ export function CadastralHeader() {
                   <div>
                     <div className="font-semibold">Project GeoJSON</div>
                     <div className="text-[10px] text-slate-400">Vector layers for QGIS/ArcGIS</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleExportKml}
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-slate-700 hover:text-slate-900 transition-colors"
+                >
+                  <Globe className="w-3.5 h-3.5 text-indigo-600" />
+                  <div>
+                    <div className="font-semibold">3D Village KML (Google Earth)</div>
+                    <div className="text-[10px] text-slate-400">All survey plots & canal corridor</div>
                   </div>
                 </button>
               </div>

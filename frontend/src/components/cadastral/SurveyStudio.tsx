@@ -11,7 +11,8 @@ import { CadastralTableModal } from "./CadastralTableModal";
 import { CadastralUploadModal } from "./CadastralUploadModal";
 import { ShareModal } from "@/components/sharing/ShareModal";
 import { useCadastralStore, SurveyPlotRecord } from "@/stores/useCadastralStore";
-import { Loader2, Globe, ExternalLink, MapPin, X } from "lucide-react";
+import { Loader2, Globe, ExternalLink, MapPin, X, Download, Check, Layers, Compass } from "lucide-react";
+import { generatePlotKml, downloadKmlBlob } from "@/lib/gis/kmlGenerator";
 
 const CadastralMap = dynamic(
   () => import("./CadastralMap").then((mod) => mod.CadastralMap),
@@ -46,6 +47,7 @@ export function SurveyStudio() {
 
   const [showEarthPrompt, setShowEarthPrompt] = useState(false);
   const [promptPlot, setPromptPlot] = useState<SurveyPlotRecord | null>(null);
+  const [downloadedKmlStep, setDownloadedKmlStep] = useState(false);
   const promptedPlotRef = useRef<string | null>(null);
 
   const initializedRef = useRef(false);
@@ -62,6 +64,15 @@ export function SurveyStudio() {
     }
     return "https://earth.google.com/web/";
   }, []);
+
+  const handleDownloadAndOpenEarth = useCallback((plot: SurveyPlotRecord) => {
+    const kml = generatePlotKml(plot, projectData);
+    const sanitizedVillage = (plot.village || "Plot").replace(/[\s/\\()]+/g, "_");
+    const sanitizedSy = String(plot.survey_no).replace(/[\s/\\()]+/g, "_");
+    downloadKmlBlob(kml, `Sy_${sanitizedSy}_${sanitizedVillage}_3D.kml`);
+    window.open(getGoogleEarthUrl(plot), "_blank", "noopener,noreferrer");
+    setDownloadedKmlStep(true);
+  }, [projectData, getGoogleEarthUrl]);
 
   useEffect(() => {
     if (!initializedRef.current) {
@@ -177,59 +188,119 @@ export function SurveyStudio() {
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              This survey plot has been located from your link. Would you like to launch Google Earth in your browser or explore in Cadastral GIS?
-            </p>
-
-            <div className="space-y-2 pt-1">
-              {/* Option 1: Google Earth Web (3D browser app) */}
-              <a
-                href={getGoogleEarthUrl(promptPlot)}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setShowEarthPrompt(false)}
-                className="group w-full p-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50/70 hover:from-blue-100 hover:to-indigo-100 text-left flex items-center justify-between transition-all shadow-xs"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-2xs shrink-0">
-                    <Globe className="w-4 h-4" />
+            {downloadedKmlStep ? (
+              <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-emerald-900 text-sm">
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>3D KML File Downloaded!</span>
                   </div>
-                  <div>
-                    <div className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
-                      <span>Open in Google Earth Web (3D)</span>
-                      <ExternalLink className="w-3 h-3 text-blue-600 opacity-70 group-hover:opacity-100" />
-                    </div>
-                    <div className="text-[11px] text-blue-800/80">
-                      View terrain, 3D satellite imagery & isometric tilt in browser
-                    </div>
-                  </div>
-                </div>
-              </a>
-
-              {/* Option 2: Cadastral GIS Workstation */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEarthPrompt(false);
-                  if (promptPlot.bounds) setTargetFlyToBounds(promptPlot.bounds);
-                }}
-                className="w-full p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-left flex items-center justify-between transition-all"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                    <MapPin className="w-4 h-4 text-emerald-600" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-900">
-                      Explore in Cadastral GIS
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      Inspect canal alignment, boundaries & land acquisition register
-                    </div>
+                  <p className="text-slate-600 leading-relaxed text-[11px]">
+                    Google Earth has opened in your browser. Because Google Earth Web does not render external vector files from bare URLs, simply <strong>drag and drop</strong> the downloaded file <code className="bg-white px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-800 font-mono text-[10px]">Sy_{promptPlot.survey_no}_3D.kml</code> anywhere onto the Google Earth tab!
+                  </p>
+                  <div className="pt-1 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadAndOpenEarth(promptPlot)}
+                      className="px-2.5 py-1 rounded-md bg-emerald-600 text-white font-semibold text-[11px] hover:bg-emerald-700 transition-colors shadow-2xs"
+                    >
+                      Re-download KML
+                    </button>
+                    <a
+                      href={getGoogleEarthUrl(promptPlot)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-md bg-white border border-emerald-300 text-emerald-800 font-semibold text-[11px] hover:bg-emerald-50 transition-colors"
+                    >
+                      Re-open Earth Tab
+                    </a>
                   </div>
                 </div>
-              </button>
-            </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEarthPrompt(false);
+                    if (promptPlot.bounds) setTargetFlyToBounds(promptPlot.bounds);
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+                >
+                  <MapPin className="w-4 h-4" />
+                  <span>Continue Exploring in Cadastral GIS</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Survey Plot <strong>{promptPlot.survey_no}</strong> is located. Choose how you would like to inspect this parcel:
+                </p>
+
+                <div className="space-y-2 pt-1">
+                  {/* Option 1: 3D Google Earth with KML */}
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadAndOpenEarth(promptPlot)}
+                    className="group w-full p-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50/70 hover:from-blue-100 hover:to-indigo-100 text-left flex items-center justify-between transition-all shadow-xs"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-2xs shrink-0">
+                        <Globe className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                          <span>Download 3D KML & Open Google Earth</span>
+                          <Download className="w-3 h-3 text-blue-600 opacity-80" />
+                        </div>
+                        <div className="text-[11px] text-blue-800/80 mt-0.5">
+                          Downloads styled 3D boundary & launches Google Earth (drag file to view)
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Option 2: Cadastral GIS Workstation */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEarthPrompt(false);
+                      if (promptPlot.bounds) setTargetFlyToBounds(promptPlot.bounds);
+                    }}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-left flex items-center justify-between transition-all"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
+                        <MapPin className="w-5 h-5 text-emerald-600" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">
+                          Explore in Cadastral GIS Workstation
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Instant vector overlay, canal corridor, landowner register & snapping
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Option 3: Google Maps */}
+                  {promptPlot.center && (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${promptPlot.center[0]},${promptPlot.center[1]}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setShowEarthPrompt(false)}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-left flex items-center justify-between transition-all text-xs text-slate-700 font-medium"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Compass className="w-4 h-4 text-slate-500" />
+                        <span>View Dropped Pin on Google Maps</span>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                    </a>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
