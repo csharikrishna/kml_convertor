@@ -31,7 +31,7 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 const memoryFallback = new Map<string, CachedProjectRecord>();
 const inFlightRequests = new Map<string, Promise<CadastralProjectData | null>>();
 
-function openDB(): Promise<IDBDatabase> {
+export function openDB(): Promise<IDBDatabase> {
   if (typeof window === "undefined" || !window.indexedDB) {
     return Promise.reject(new Error("IndexedDB not available in this environment"));
   }
@@ -329,5 +329,79 @@ export async function deleteCustomProjectFromIDB(projectId: string): Promise<voi
     });
   } catch (err) {
     console.warn("Failed to delete custom project from IDB:", err);
+  }
+}
+
+/**
+ * Generates stable unique key for cadastral parcel feature,
+ * correctly differentiating multipart parcels that share the same survey number.
+ */
+export function getParcelFeatureKey(f: any): string {
+  if (!f) return "";
+  if (typeof f === "string") return f;
+  const props = f.properties || (typeof f.getProperties === "function" ? f.getProperties() : {}) || {};
+  const sNo = props.survey_no ?? f.id ?? "";
+  const area = props.total_area_m2 ?? props.total_acres ?? "";
+  const center = props.center ? `${props.center[0]}_${props.center[1]}` : "";
+  return area ? `${sNo}_${area}${center ? `_${center}` : ""}` : String(sNo);
+}
+
+/**
+ * Cache incrementally loaded viewport parcels into IndexedDB
+ */
+export async function cacheViewportParcels(
+  projectId: string,
+  parcels: any[]
+): Promise<void> {
+  if (typeof window === "undefined" || !parcels.length) return;
+
+  const key = `${projectId}_viewport_parcels`;
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_PROJECTS, "readwrite");
+      const store = tx.objectStore(STORE_PROJECTS);
+      const getReq = store.get(key);
+      getReq.onsuccess = () => {
+        const existing = getReq.result?.parcels || [];
+        const seen = new Set(existing.map((p: any) => getParcelFeatureKey(p)));
+        const merged = [...existing];
+        for (const p of parcels) {
+          const pKey = getParcelFeatureKey(p);
+          if (!seen.has(pKey)) {
+            seen.add(pKey);
+            merged.push(p);
+          }
+        }
+        store.put({ id: key, parcels: merged, timestamp: Date.now() });
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch (err) {
+    console.warn("Failed to cache viewport parcels to IDB:", err);
+  }
+}
+
+/**
+ * Retrieve cached viewport parcels from IndexedDB
+ */
+export async function getCachedViewportParcels(projectId: string): Promise<any[]> {
+  if (typeof window === "undefined") return [];
+
+  const key = `${projectId}_viewport_parcels`;
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_PROJECTS, "readonly");
+      const store = tx.objectStore(STORE_PROJECTS);
+      const req = store.get(key);
+      req.onsuccess = () => {
+        resolve(req.result?.parcels || []);
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
   }
 }

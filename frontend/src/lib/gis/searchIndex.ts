@@ -76,6 +76,7 @@ export class CadastralSearchIndex {
   private subdivisionMap = new Map<string, SurveyPlotRecord[]>();
   private pattadarTokenMap = new Map<string, Set<SurveyPlotRecord>>();
   private khataMap = new Map<string, SurveyPlotRecord[]>();
+  private multipartSurveyNos = new Set<string>();
   private plotsList: SurveyPlotRecord[] = [];
   private roadsList: SurveyPlotRecord[] = [];
   private chainageList: Array<{
@@ -98,12 +99,30 @@ export class CadastralSearchIndex {
     this.subdivisionMap.clear();
     this.pattadarTokenMap.clear();
     this.khataMap.clear();
+    this.multipartSurveyNos.clear();
     this.plotsList = [];
     this.roadsList = [];
     this.chainageList = [];
     this.structureList = [];
 
     const reg = data.survey_register || [];
+
+    // Pre-calculate multipart survey numbers (same survey_no with multiple parts)
+    const counts = new Map<string, number>();
+    for (const plot of reg) {
+      const rawNo = plot.survey_no ? String(plot.survey_no).trim().toLowerCase() : "";
+      if (rawNo) {
+        counts.set(rawNo, (counts.get(rawNo) || 0) + 1);
+      }
+    }
+    for (const [no, count] of counts.entries()) {
+      if (count > 1) {
+        this.multipartSurveyNos.add(no);
+        const strippedNo = no.replace(CADASTRAL_PREFIX_REGEX, "").trim();
+        if (strippedNo) this.multipartSurveyNos.add(strippedNo);
+      }
+    }
+
     for (const plot of reg) {
       const rawNo = plot.survey_no ? String(plot.survey_no).trim() : "";
       if (!rawNo) continue;
@@ -286,7 +305,11 @@ export class CadastralSearchIndex {
     const seenPlots = new Set<string>();
 
     const addPlotResult = (p: SurveyPlotRecord, score: number, badgeText?: string, variant?: "exact" | "affected" | "retained" | "road") => {
-      const id = `plot-${p.survey_no}`;
+      const rawNo = p.survey_no ? String(p.survey_no).trim().toLowerCase() : "";
+      const strippedNo = rawNo.replace(CADASTRAL_PREFIX_REGEX, "").trim();
+      const isMulti = this.multipartSurveyNos.has(rawNo) || this.multipartSurveyNos.has(strippedNo);
+      const centerKey = p.center ? `${p.center[0].toFixed(5)},${p.center[1].toFixed(5)}` : (p.total_acres || "");
+      const id = isMulti ? `plot-${p.survey_no}-${centerKey}` : `plot-${p.survey_no}`;
       if (seenPlots.has(id)) return;
       seenPlots.add(id);
 
@@ -309,10 +332,16 @@ export class CadastralSearchIndex {
         }
       }
 
+      const title = isRoad
+        ? `Cart Track / Road (${p.survey_no})`
+        : isMulti && p.total_acres
+        ? `Survey Plot ${p.survey_no} (Part • ${p.total_acres} Ac)`
+        : `Survey Plot ${p.survey_no}`;
+
       results.push({
         id,
         type: isRoad ? "road" : "plot",
-        title: isRoad ? `Cart Track / Road (${p.survey_no})` : `Survey Plot ${p.survey_no}`,
+        title,
         subtitle: `${p.village}, ${p.mandal} • ${isRoad ? "Government Right of Way" : p.land_nature || p.land_type || "Ryotwari Patta"}`,
         extentText: `${p.total_acres} Ac (${p.total_ac_cts || ""})`,
         ownerText: p.pattadar_name

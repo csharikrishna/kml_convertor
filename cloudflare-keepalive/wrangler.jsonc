@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cad2kml-keepalive",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-01",
+  "triggers": {
+    "crons": [
+      "*/10 * * * *"
+    ]
+  },
+  "vars": {
+    "BACKEND_HEALTH_URL": "https://cad2kml-converter.onrender.com/health",
+    "TIMEOUT_MS": "15000",
+    "MAX_RETRIES": "3"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

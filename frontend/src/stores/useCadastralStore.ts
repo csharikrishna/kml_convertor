@@ -1,4 +1,5 @@
 import { accumulateDistances, calculatePolygonAreaM2 } from "@/lib/gis/geodesy";
+import { getGeodesyWorker } from "@/lib/gis/geodesyWorkerClient";
 import { CadastralSearchIndex } from "@/lib/gis/searchIndex";
 import {
   loadProjectOfflineFirst,
@@ -442,6 +443,32 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
         ring.push([nextPoints[0].lng, nextPoints[0].lat]);
         area = calculatePolygonAreaM2(ring);
       }
+
+      // Offload to Web Worker for asynchronous geodesic accuracy verification
+      if (typeof window !== "undefined") {
+        getGeodesyWorker()
+          .accumulateDistances(nextPoints)
+          .then(({ totalDistance: wDist }) => {
+            if (Math.abs(wDist - totalDistance) > 0.01) {
+              set({ measureTotalDist: wDist });
+            }
+          })
+          .catch(() => {});
+
+        if (state.measurementMode === "area" && nextPoints.length >= 3) {
+          const ring = nextPoints.map((pt) => [pt.lng, pt.lat]);
+          ring.push([nextPoints[0].lng, nextPoints[0].lat]);
+          getGeodesyWorker()
+            .calculateArea(ring)
+            .then(({ areaM2: wArea }) => {
+              if (Math.abs(wArea - area) > 0.1) {
+                set({ measureAreaM2: wArea });
+              }
+            })
+            .catch(() => {});
+        }
+      }
+
       return {
         measurePoints: nextPoints,
         measureTotalDist: totalDistance,
@@ -462,6 +489,31 @@ export const useCadastralStore = create<CadastralState>((set, get) => ({
         ring.push([nextPoints[0].lng, nextPoints[0].lat]);
         area = calculatePolygonAreaM2(ring);
       }
+
+      if (typeof window !== "undefined") {
+        getGeodesyWorker()
+          .accumulateDistances(nextPoints)
+          .then(({ totalDistance: wDist }) => {
+            if (Math.abs(wDist - totalDistance) > 0.01) {
+              set({ measureTotalDist: wDist });
+            }
+          })
+          .catch(() => {});
+
+        if (state.measurementMode === "area" && nextPoints.length >= 3) {
+          const ring = nextPoints.map((pt) => [pt.lng, pt.lat]);
+          ring.push([nextPoints[0].lng, nextPoints[0].lat]);
+          getGeodesyWorker()
+            .calculateArea(ring)
+            .then(({ areaM2: wArea }) => {
+              if (Math.abs(wArea - area) > 0.1) {
+                set({ measureAreaM2: wArea });
+              }
+            })
+            .catch(() => {});
+        }
+      }
+
       return {
         measurePoints: nextPoints,
         measureTotalDist: totalDistance,

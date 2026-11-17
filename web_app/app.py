@@ -407,20 +407,58 @@ def _status_for(ex: ConversionError) -> int:
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    """Health check endpoint for container probes and load balancers."""
+    """
+    Comprehensive health check endpoint for container probes, status dots, and load balancers.
+    Fast, non-blocking check with zero CAD conversion overhead.
+    """
     with _metrics_lock:
         metrics = dict(_metrics)
         failures = dict(_failures_by_type)
+
+    # Safe non-blocking file count with fallback
+    try:
+        temp_count = sum(1 for _ in TEMP_STORAGE.iterdir())
+    except Exception:
+        temp_count = 0
+
+    dwg_avail = is_dwg_supported()
+    storage_ok = TEMP_STORAGE.is_dir() and os.access(TEMP_STORAGE, os.W_OK)
+
     return {
         "status": "healthy",
+        "liveness": True,
+        "readiness": storage_ok,
         "service": "dxf2kml-api",
         "version": __version__,
-        "dwg_supported": is_dwg_supported(),
-        "temp_files_cached": sum(1 for _ in TEMP_STORAGE.iterdir()),
+        "dwg_supported": dwg_avail,
+        "temp_files_cached": temp_count,
         "conversions": {**metrics, "failed_by_type": failures},
-        "limits": {"max_upload_mb": MAX_UPLOAD_BYTES // 2**20, "timeout_seconds": CONVERSION_TIMEOUT,
-                   "max_concurrent": MAX_CONCURRENT},
+        "limits": {
+            "max_upload_mb": MAX_UPLOAD_BYTES // 2**20,
+            "timeout_seconds": CONVERSION_TIMEOUT,
+            "max_concurrent": MAX_CONCURRENT,
+        },
+        "dependencies": {
+            "storage_writable": storage_ok,
+            "dwg_converter_available": dwg_avail,
+        },
     }
+
+
+@app.get("/health/live", tags=["Health"])
+def health_liveness():
+    """Ultra-fast zero-allocation liveness probe: confirms the process is responsive."""
+    return {"status": "alive", "timestamp": time.time()}
+
+
+@app.get("/health/ready", tags=["Health"])
+def health_readiness():
+    """Readiness probe: verifies container is prepared to accept conversion workloads."""
+    storage_ok = TEMP_STORAGE.is_dir() and os.access(TEMP_STORAGE, os.W_OK)
+    if not storage_ok:
+        raise HTTPException(status_code=503, detail="Temporary scratch storage unavailable")
+    return {"status": "ready", "dwg_supported": is_dwg_supported(), "timestamp": time.time()}
+
 
 
 @app.get("/favicon.ico", include_in_schema=False)

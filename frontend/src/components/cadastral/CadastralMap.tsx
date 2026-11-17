@@ -37,6 +37,9 @@ import {
   calculatePolygonAreaM2,
   accumulateDistances,
 } from "@/lib/gis/geodesy";
+import { getGeodesyWorker } from "@/lib/gis/geodesyWorkerClient";
+import { globalFgbStreamer, ViewportBBox, getParcelFeatureKey, getFeatureBBox } from "@/lib/gis/flatgeobufLoader";
+import { cacheViewportParcels } from "@/lib/cache/cadastralCache";
 
 function shiftLatLng(lat: number, lon: number, dx: number, dy: number): [number, number] {
   if (dx === 0 && dy === 0) return [lat, lon];
@@ -175,6 +178,11 @@ export function CadastralMap() {
   const [calibrateStep, setCalibrateStep] = useState<number>(1);
   const canvasRendererRef = useRef<L.Canvas | null>(null);
   const fittedProjectIdRef = useRef<string | null>(null);
+  const currentProjectIdRef = useRef<string>(currentProjectId);
+  currentProjectIdRef.current = currentProjectId;
+  const renderedParcelKeysRef = useRef<Set<string>>(new Set());
+  const calibrationOffsetRef = useRef<{ dx: number; dy: number }>(calibrationOffset);
+  calibrationOffsetRef.current = calibrationOffset;
 
   // Reset calibration and fitted-bounds tracker when switching projects
   useEffect(() => {
@@ -250,6 +258,52 @@ export function CadastralMap() {
     map.on("zoomend", () => {
       setCurrentZoom(map.getZoom());
     });
+
+    // Viewport-aware spatial streaming sync
+    const onViewportMoveEnd = () => {
+      try {
+        const bounds = map.getBounds();
+        const bbox: ViewportBBox = {
+          minX: bounds.getWest(),
+          minY: bounds.getSouth(),
+          maxX: bounds.getEast(),
+          maxY: bounds.getNorth(),
+        };
+        const pid = currentProjectIdRef.current;
+        if (pid) {
+          globalFgbStreamer
+            .fetchViewportParcels(pid, bbox)
+            .then(({ features }) => {
+              if (features && features.length > 0) {
+                cacheViewportParcels(pid, features);
+
+                // Dynamically append newly streamed parcels to active Leaflet canvas layer
+                if (plotsLayerRef.current) {
+                  const toAdd: any[] = [];
+                  for (const f of features) {
+                    const key = getParcelFeatureKey(f);
+                    if (!renderedParcelKeysRef.current.has(key)) {
+                      renderedParcelKeysRef.current.add(key);
+                      toAdd.push(f);
+                    }
+                  }
+                  if (toAdd.length > 0) {
+                    const offset = calibrationOffsetRef.current || { dx: 0, dy: 0 };
+                    const shifted = applyOffsetToGeoJSON(
+                      { type: "FeatureCollection", features: toAdd },
+                      offset.dx,
+                      offset.dy
+                    );
+                    plotsLayerRef.current.addData(shifted as any);
+                  }
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    };
+    map.on("moveend", onViewportMoveEnd);
 
     mapInstanceRef.current = map;
 
@@ -436,6 +490,10 @@ export function CadastralMap() {
 
     // 3e. Survey Plots Polygons
     if (layers.survey_plots && projectData.layers.survey_plots) {
+      renderedParcelKeysRef.current.clear();
+      (projectData.layers.survey_plots.features || []).forEach((f: any) => {
+        renderedParcelKeysRef.current.add(getParcelFeatureKey(f));
+      });
       const shiftedPlots = applyOffsetToGeoJSON(projectData.layers.survey_plots, dx, dy);
       plotsLayerRef.current = L.geoJSON(shiftedPlots, {
         style: (feature) => {
@@ -569,8 +627,10 @@ export function CadastralMap() {
               }
 
               const match = projectData.survey_register.find(
-                (item) => item.survey_no === p.survey_no
-              );
+                (item) => item.survey_no === p.survey_no && (
+                  !p.total_acres || Math.abs(item.total_acres - p.total_acres) < 0.05
+                )
+              ) || projectData.survey_register.find((item) => item.survey_no === p.survey_no);
               if (match) {
                 setHoveredPlot(match);
               }
@@ -601,10 +661,12 @@ export function CadastralMap() {
                 return;
               }
               const match = projectData.survey_register.find(
-                (item) => item.survey_no === p.survey_no
-              );
+                (item) => item.survey_no === p.survey_no && (
+                  !p.total_acres || Math.abs(item.total_acres - p.total_acres) < 0.05
+                )
+              ) || projectData.survey_register.find((item) => item.survey_no === p.survey_no);
               if (match) {
-                if (selectedPlot?.survey_no === match.survey_no) {
+                if (selectedPlot?.survey_no === match.survey_no && selectedPlot.total_acres === match.total_acres) {
                   clearSelection();
                 } else {
                   setSelectedPlot(match);
@@ -1062,17 +1124,43 @@ export function CadastralMap() {
 
     // Highlight selected plot boundary with golden amber glowing border
     if (layers.survey_plots && projectData.layers?.survey_plots?.features) {
-      const feat = projectData.layers.survey_plots.features.find(
+      const matchingFeats = projectData.layers.survey_plots.features.filter(
         (f: any) => String(f.properties?.survey_no) === String(selectedPlot.survey_no)
       );
-      if (feat) {
-        const shiftedFeat = applyOffsetToGeoJSON(feat, dx, dy);
-        const plotHighlight = L.geoJSON(shiftedFeat, {
-          style: {
-            color: "#f59e0b",
-            weight: 3.5,
-            fillColor: selectedPlot.canal_passing ? "#10b981" : "#3b82f6",
-            fillOpacity: Math.min(0.40, (layerOpacity.survey_plots ?? 0.3) + 0.1),
+      if (matchingFeats.length > 0) {
+        // If multipart plot, determine primary feature closest to selectedPlot.center
+        let primaryFeat = matchingFeats[0];
+        if (matchingFeats.length > 1 && selectedPlot.center) {
+          let minD = Infinity;
+          for (const mf of matchingFeats) {
+            const bbox = getFeatureBBox(mf.geometry);
+            if (bbox) {
+              const cX = (bbox[0] + bbox[2]) / 2;
+              const cY = (bbox[1] + bbox[3]) / 2;
+              const d = Math.hypot(cX - selectedPlot.center[1], cY - selectedPlot.center[0]);
+              if (d < minD) {
+                minD = d;
+                primaryFeat = mf;
+              }
+            }
+          }
+        }
+
+        const shiftedCollection = applyOffsetToGeoJSON(
+          { type: "FeatureCollection", features: matchingFeats },
+          dx,
+          dy
+        );
+        const plotHighlight = L.geoJSON(shiftedCollection as any, {
+          style: (f: any) => {
+            const isPrimary = f === primaryFeat || matchingFeats.length === 1;
+            return {
+              color: isPrimary ? "#f59e0b" : "#fbbf24",
+              weight: isPrimary ? 3.5 : 2.5,
+              dashArray: isPrimary ? undefined : "4, 3",
+              fillColor: selectedPlot.canal_passing ? "#10b981" : "#3b82f6",
+              fillOpacity: Math.min(0.40, (layerOpacity.survey_plots ?? 0.3) + (isPrimary ? 0.15 : 0.08)),
+            };
           },
         });
         group.addLayer(plotHighlight);

@@ -241,4 +241,63 @@ describe("CadastralSearchIndex & Exact Resolution Engine", () => {
     // Target is < 5ms, indexed lookup should be < 0.1ms!
     expect(durationPerLookup).toBeLessThan(1.0);
   });
+
+  it("resolves multipart parcels (e.g. Survey 468) and returns both parts in search results", () => {
+    const multipartData: CadastralProjectData = {
+      ...dummyProjectData,
+      survey_register: [
+        {
+          survey_no: "468",
+          village: "TestVillage",
+          mandal: "TestMandal",
+          district: "TestDistrict",
+          total_area_m2: 8420.5,
+          total_acres: 2.08,
+          total_ac_cts: "2 Ac 8 Cts",
+          canal_passing: false,
+          acquired_area_m2: 0,
+          acquired_acres: 0,
+          balance_area_m2: 8420.5,
+          balance_acres: 2.08,
+          chainage_range: "Non-acquired",
+          canal_length_m: 0,
+          canal_width_m: 0,
+          center: [14.6519, 77.4337],
+        },
+        {
+          survey_no: "468",
+          village: "TestVillage",
+          mandal: "TestMandal",
+          district: "TestDistrict",
+          total_area_m2: 20646.8,
+          total_acres: 5.1,
+          total_ac_cts: "5 Ac 10 Cts",
+          canal_passing: false,
+          acquired_area_m2: 0,
+          acquired_acres: 0,
+          balance_area_m2: 20646.8,
+          balance_acres: 5.1,
+          chainage_range: "Non-acquired",
+          canal_length_m: 0,
+          canal_width_m: 0,
+          center: [14.6871, 77.3391],
+        },
+      ],
+    };
+
+    const mpIndex = new CadastralSearchIndex(multipartData);
+    const searchResults = mpIndex.search("468");
+
+    // Both parts must appear in search results without deduplication collision
+    expect(searchResults.length).toBe(2);
+    expect(searchResults[0].plot?.survey_no).toBe("468");
+    expect(searchResults[1].plot?.survey_no).toBe("468");
+
+    // Distinct acreages and titles
+    const acres = searchResults.map((r) => r.plot?.total_acres).sort();
+    expect(acres).toEqual([2.08, 5.1]);
+
+    expect(searchResults.some((r) => r.title.includes("2.08 Ac"))).toBe(true);
+    expect(searchResults.some((r) => r.title.includes("5.1 Ac"))).toBe(true);
+  });
 });

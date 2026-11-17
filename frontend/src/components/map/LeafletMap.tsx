@@ -19,6 +19,7 @@ import {
   calculatePolygonAreaM2,
   accumulateDistances,
 } from "@/lib/gis/geodesy";
+import { getGeodesyWorker } from "@/lib/gis/geodesyWorkerClient";
 import { findNearestVertex } from "@/lib/gis/snapping";
 import { latLonToUtm, calculateUtmZone } from "@/lib/gis/utm";
 import { safeColor, escapeHtml } from "@/lib/utils";
@@ -621,7 +622,7 @@ export function LeafletMap() {
                 vertexCount = ring.length;
               }
 
-              setInspectedFeature({
+              const info = {
                 layer: props.layer || "Default",
                 type: props.type === "text" ? "Text Label" : geomType,
                 lengthMeters,
@@ -631,7 +632,25 @@ export function LeafletMap() {
                 textHeight: props.text_height,
                 rotation: props.rotation,
                 properties: props,
-              });
+              };
+              setInspectedFeature(info);
+
+              if (geomType === "LineString") {
+                getGeodesyWorker()
+                  .calculateLength(feature.geometry.coordinates)
+                  .then(({ lengthMeters: wLen }) => {
+                    setInspectedFeature({ ...info, lengthMeters: wLen });
+                  })
+                  .catch(() => {});
+              } else if (geomType === "Polygon") {
+                const ring = feature.geometry.coordinates[0] || [];
+                getGeodesyWorker()
+                  .calculateArea(ring)
+                  .then(({ areaM2: wArea }) => {
+                    setInspectedFeature({ ...info, areaM2: wArea });
+                  })
+                  .catch(() => {});
+              }
             },
             mouseout: () => {
               if (geomType !== "Point" && (layer as any).setStyle) {

@@ -53,9 +53,24 @@ def test_index_page_is_hardened():
 def test_health_reports_capabilities_and_counters():
     data = client.get("/health").json()
     assert data["status"] == "healthy"
+    assert data["liveness"] is True
+    assert data["readiness"] is True
     assert isinstance(data["dwg_supported"], bool)
     assert {"succeeded", "failed", "active"} <= set(data["conversions"])
     assert "temp_files_cached" in data
+    assert "dependencies" in data
+    assert data["dependencies"]["storage_writable"] is True
+
+
+def test_health_liveness_and_readiness():
+    live_res = client.get("/health/live")
+    assert live_res.status_code == 200
+    assert live_res.json()["status"] == "alive"
+
+    ready_res = client.get("/health/ready")
+    assert ready_res.status_code == 200
+    assert ready_res.json()["status"] == "ready"
+
 
 
 @pytest.mark.parametrize("lat, lon, epsg, zone_text", [

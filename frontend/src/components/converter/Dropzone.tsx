@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { UploadCloud, FileText, X, Sparkles, AlertCircle } from "lucide-react";
+import { UploadCloud, FileText, X, Sparkles, AlertCircle, ShieldCheck } from "lucide-react";
 import { useConverterStore } from "@/stores/useConverterStore";
 import { fetchSampleDrawingFile } from "@/lib/api/client";
+import { validateCadFileClientSide } from "@/lib/gis/cadValidator";
 
 export function Dropzone() {
   const {
@@ -18,11 +19,12 @@ export function Dropzone() {
   } = useConverterStore();
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [cadVersionLabel, setCadVersionLabel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const acceptedExts = dwgSupported ? [".dxf", ".dwg"] : [".dxf"];
 
-  const validateAndSetFile = (f: File) => {
+  const validateAndSetFile = async (f: File) => {
     const ext = `.${f.name.split(".").pop()?.toLowerCase()}`;
     if (!acceptedExts.includes(ext)) {
       setErrorMessage(
@@ -42,6 +44,14 @@ export function Dropzone() {
       return;
     }
 
+    // Client-side header and magic signature pre-validation
+    const validation = await validateCadFileClientSide(f);
+    if (!validation.isValid) {
+      setErrorMessage(validation.error || "Corrupted CAD drawing file.");
+      return;
+    }
+
+    setCadVersionLabel(validation.versionString || null);
     setFile(f);
   };
 
@@ -153,8 +163,14 @@ export function Dropzone() {
               <div className="text-xs font-semibold text-slate-900 truncate">
                 {file.name}
               </div>
-              <div className="text-[11px] text-slate-500 font-mono">
-                {formatFileSize(file.size)}
+              <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2">
+                <span>{formatFileSize(file.size)}</span>
+                {cadVersionLabel && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-sans font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                    {cadVersionLabel}
+                  </span>
+                )}
               </div>
             </div>
           </div>
