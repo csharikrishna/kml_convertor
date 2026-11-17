@@ -119,7 +119,9 @@ export function CadastralUploadModal() {
     const stageTimer2 = setTimeout(() => setProcessingStage(3), 4000);
 
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
+      const apiBase =
+        process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ||
+        "https://cad2kml-converter.onrender.com";
       let res: Response;
       try {
         res = await fetch(`${apiBase}/api/cadastral/projects/create`, {
@@ -185,7 +187,14 @@ export function CadastralUploadModal() {
       clearTimeout(stageTimer2);
       setIsSubmitting(false);
       setProcessingStage(0);
-      setErrorMsg(err.message || "Failed to create village project.");
+      const rawMsg = err?.message || "";
+      if (rawMsg.includes("Failed to fetch") || rawMsg.includes("NetworkError")) {
+        setErrorMsg(
+          "Backend compute server is currently sleeping or spinning up. Please click the red 'Wake Backend' button in the top bar, wait for 'Kaboom! Live', and try again."
+        );
+      } else {
+        setErrorMsg(rawMsg || "Failed to create village project.");
+      }
     }
   };
 

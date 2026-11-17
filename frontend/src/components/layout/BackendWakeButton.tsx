@@ -20,12 +20,14 @@ export function BackendWakeButton() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
 
-    const backendBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
-    // Test relative proxy route first, fallback to direct if configured
-    const endpoints = ["/health"];
-    if (backendBase) {
-      endpoints.unshift(`${backendBase}/health`);
-    }
+    const backendBase =
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") ||
+      "https://cad2kml-converter.onrender.com";
+    // Test direct Render URL and relative Next.js proxy route
+    const endpoints = [
+      `${backendBase}/health`,
+      "/health",
+    ];
 
     for (const url of endpoints) {
       try {

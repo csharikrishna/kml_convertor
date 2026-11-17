@@ -4,7 +4,9 @@ import path from "path";
 const backendUrl =
   process.env.BACKEND_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8005";
+  (process.env.NODE_ENV === "development"
+    ? "http://127.0.0.1:8005"
+    : "https://cad2kml-converter.onrender.com");
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
