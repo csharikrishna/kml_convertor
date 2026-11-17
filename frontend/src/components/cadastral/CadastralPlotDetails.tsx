@@ -31,20 +31,6 @@ import { generatePlotKml, downloadKmlBlob } from "@/lib/gis/kmlGenerator";
 
 export function CadastralPlotDetails() {
   const [copiedLink, setCopiedLink] = useState(false);
-  const [downloadedKmlBanner, setDownloadedKmlBanner] = useState(false);
-
-  const getGoogleEarthUrl = useCallback((plot: any): string => {
-    let lat = plot.center?.[0];
-    let lng = plot.center?.[1];
-    if ((lat === undefined || lng === undefined) && plot.bounds) {
-      lat = (plot.bounds[0][0] + plot.bounds[1][0]) / 2;
-      lng = (plot.bounds[0][1] + plot.bounds[1][1]) / 2;
-    }
-    if (lat !== undefined && lng !== undefined) {
-      return `https://earth.google.com/web/@${lat.toFixed(6)},${lng.toFixed(6)},420a,500d,35y,0h,45t,0r`;
-    }
-    return "https://earth.google.com/web/";
-  }, []);
   const {
     selectedPlot,
     setSelectedPlot,
@@ -78,16 +64,8 @@ export function CadastralPlotDetails() {
     const kml = generatePlotKml(selectedPlot, projectData);
     const sanitizedVillage = (selectedPlot.village || "Plot").replace(/[\s/\\()]+/g, "_");
     const sanitizedSy = String(selectedPlot.survey_no).replace(/[\s/\\()]+/g, "_");
-    downloadKmlBlob(kml, `Sy_${sanitizedSy}_${sanitizedVillage}_3D.kml`);
-    setDownloadedKmlBanner(true);
-    setTimeout(() => setDownloadedKmlBanner(false), 9000);
+    downloadKmlBlob(kml, `Sy_${sanitizedSy}_${sanitizedVillage}.kml`);
   }, [selectedPlot, projectData]);
-
-  const handleOpenEarthWithKml = useCallback(() => {
-    if (!selectedPlot) return;
-    handleDownloadPlotKml();
-    window.open(getGoogleEarthUrl(selectedPlot), "_blank", "noopener,noreferrer");
-  }, [selectedPlot, handleDownloadPlotKml, getGoogleEarthUrl]);
 
   // Format area according to selected unit preference
   const formatArea = useCallback(
@@ -665,32 +643,23 @@ Timestamp: ${new Date().toISOString()}
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap justify-end">
             <button
               type="button"
-              onClick={handleOpenEarthWithKml}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 hover:text-blue-800 border border-blue-200 rounded-md px-2 py-1 transition-colors shadow-2xs"
-              title="Download 3D KML & launch Google Earth Web (drag file into Earth to view 3D polygon)"
-            >
-              <Globe className="w-3 h-3 text-blue-600" />
-              <span>Earth 3D</span>
-            </button>
-            <button
-              type="button"
               onClick={handleDownloadPlotKml}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md px-2 py-1 transition-colors shadow-2xs"
-              title="Download 3D KML file for Google Earth Pro Desktop or Web"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 hover:text-blue-700 border border-slate-200 rounded-md px-2 py-1 transition-colors shadow-2xs"
+              title="Download parcel vector KML file"
             >
-              <Download className="w-3 h-3 text-amber-600" />
-              <span>3D KML</span>
+              <Download className="w-3 h-3 text-slate-500" />
+              <span>KML</span>
             </button>
             {selectedPlot.center && (
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${selectedPlot.center[0]},${selectedPlot.center[1]}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 hover:text-blue-600 border border-slate-200/90 rounded-md px-2 py-1 transition-colors shadow-2xs"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md px-2 py-1 transition-colors shadow-2xs"
                 title={`Open Survey Plot ${selectedPlot.survey_no} in Google Maps with dropped pin`}
               >
                 <ExternalLink className="w-3 h-3 text-emerald-600" />
-                <span>Maps</span>
+                <span>Google Maps</span>
               </a>
             )}
           </div>
@@ -1216,26 +1185,6 @@ Timestamp: ${new Date().toISOString()}
         )}
       </div>
 
-      {/* Guidance Banner when KML is downloaded for Google Earth */}
-      {downloadedKmlBanner && (
-        <div className="mx-3 my-2 p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-start gap-2.5 shadow-sm animate-in fade-in duration-200 shrink-0">
-          <Globe className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <div className="font-bold text-blue-950">3D KML File Downloaded!</div>
-            <div className="text-[11px] text-blue-800/90 mt-0.5 leading-snug">
-              Google Earth opened! Simply <strong>drag and drop</strong> the downloaded <code>.kml</code> file into your Google Earth browser tab (or double-click to open in Google Earth Pro desktop) to view the 3D parcel boundary and canal corridor.
-            </div>
-          </div>
-          <button
-            onClick={() => setDownloadedKmlBanner(false)}
-            className="p-1 rounded text-blue-400 hover:text-blue-700 transition-colors"
-            title="Dismiss"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
       {/* 5. Footer Actions */}
       <div className="p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 flex items-center justify-between gap-1.5 shadow-[0_-2px_10px_rgba(0,0,0,0.03)] shrink-0 flex-wrap sm:flex-nowrap">
         <button
@@ -1258,21 +1207,11 @@ Timestamp: ${new Date().toISOString()}
 
         <button
           type="button"
-          onClick={handleOpenEarthWithKml}
-          className="h-9 px-2.5 rounded-lg border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-xs font-semibold text-blue-700 flex items-center justify-center gap-1.5 transition-colors shadow-2xs active:scale-98"
-          title="Download 3D KML & open Google Earth (drag file into Earth to view 3D polygon)"
-        >
-          <Globe className="w-3.5 h-3.5 text-blue-600" />
-          <span>Earth 3D</span>
-        </button>
-
-        <button
-          type="button"
           onClick={handleDownloadPlotKml}
-          className="h-9 px-2.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-xs font-semibold text-amber-800 flex items-center justify-center gap-1.5 transition-colors shadow-2xs active:scale-98"
-          title="Download 3D KML file for Google Earth Desktop or Web"
+          className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors shadow-xs active:scale-98"
+          title="Download parcel vector KML file"
         >
-          <Download className="w-3.5 h-3.5 text-amber-600" />
+          <Download className="w-3.5 h-3.5 text-slate-500" />
           <span>KML</span>
         </button>
 

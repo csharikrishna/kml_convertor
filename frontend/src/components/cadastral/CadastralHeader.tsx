@@ -27,6 +27,8 @@ import {
   FileCode,
   Sparkles,
   Globe,
+  Navigation,
+  User,
 } from "lucide-react";
 import { generateProjectKml, downloadKmlBlob } from "@/lib/gis/kmlGenerator";
 import { GlobalBrandAnchor } from "@/components/layout/GlobalBrandAnchor";
@@ -37,12 +39,16 @@ import { useGisStore } from "@/stores/useGisStore";
 
 interface SearchResultItem {
   id: string;
-  type: "plot" | "chainage" | "structure";
+  type: "plot" | "road" | "chainage" | "structure";
   title: string;
   subtitle: string;
+  extentText?: string;
+  ownerText?: string;
   badge?: string;
+  badgeVariant?: "exact" | "affected" | "retained" | "road" | "marker";
   plot?: SurveyPlotRecord;
   bounds?: [[number, number], [number, number]];
+  score: number;
 }
 
 export function CadastralHeader() {
@@ -115,93 +121,189 @@ export function CadastralHeader() {
       village: projectData?.village || "Survey Village",
     };
 
-  // Enhanced global search: Plots, Chainages, Structures, Village/Mandal
+  // Intelligent spatial search with prefix stripping, prioritized scoring & detailed attributes
   const searchResults: SearchResultItem[] = useMemo(() => {
     if (!searchTerm.trim() || !projectData) return [];
-    const term = searchTerm.toLowerCase().trim();
-    const results: SearchResultItem[] = [];
+    const raw = searchTerm.trim();
+    const lower = raw.toLowerCase();
 
-    // 1. Survey Plots
+    // Strip user prefixes such as "survey no.", "survey", "sy. no.", "sy", "plot", "s.no"
+    // e.g. "Survey No. 235" -> "235"
+    const stripped = lower
+      .replace(/^(survey\s*no\.?|survey\s*number|survey|sy\.?\s*no\.?|sy\.?|s\.?\s*no\.?|plot\s*no\.?|plot)\s*/i, "")
+      .trim();
+
+    const digitsOnly = stripped.replace(/\D+/g, "");
+    const candidates: SearchResultItem[] = [];
+
+    // 1. Survey Plots & Land Parcels
     if (projectData.survey_register) {
       projectData.survey_register.forEach((p) => {
-        const matchesSurvey = p.survey_no.toLowerCase().includes(term);
-        const matchesVillage = p.village?.toLowerCase().includes(term);
-        const matchesMandal = p.mandal?.toLowerCase().includes(term);
-        const matchesDistrict = p.district?.toLowerCase().includes(term);
-        const matchesChainage = p.chainage_range?.toLowerCase().includes(term);
-        const matchesAffected =
-          (term === "affected" || term === "canal" || term === "row") && p.canal_passing;
+        const rawNo = p.survey_no ? String(p.survey_no).trim() : "";
+        const lowerNo = rawNo.toLowerCase();
+        const pDigits = lowerNo.replace(/\D+/g, "");
 
-        if (
-          matchesSurvey ||
-          matchesVillage ||
-          matchesMandal ||
-          matchesDistrict ||
-          matchesChainage ||
-          matchesAffected
+        const isPoramboke = Boolean(
+          p.is_poramboke ||
+          lowerNo.includes("cart") ||
+          lowerNo.includes("track") ||
+          lowerNo.includes("road") ||
+          lowerNo.includes("donka") ||
+          lowerNo.includes("vagu")
+        );
+
+        let score = 0;
+        let badge: string | undefined = undefined;
+        let badgeVariant: "exact" | "affected" | "retained" | "road" | "marker" = "retained";
+
+        // Category A: Road / Cart Track / Poramboke
+        if (isPoramboke) {
+          const isRoadSearch =
+            lower.includes("cart") ||
+            lower.includes("track") ||
+            lower.includes("road") ||
+            lower.includes("donka") ||
+            lower.includes("vagu") ||
+            lower.includes("poramboke");
+
+          if (isRoadSearch || lowerNo.includes(stripped)) {
+            score = isRoadSearch ? 850 : 150;
+            candidates.push({
+              id: `plot-${rawNo}`,
+              type: "road",
+              title: `Cart Track / Road (${rawNo})`,
+              subtitle: `${p.village}, ${p.mandal} • Government Right of Way`,
+              extentText: `${p.total_acres} Ac (${p.total_ac_cts || ''})`,
+              ownerText: "Government Poramboke / Cart Track",
+              badge: "Road Network",
+              badgeVariant: "road",
+              plot: p,
+              bounds: p.bounds,
+              score,
+            });
+          }
+          return;
+        }
+
+        // Category B: Survey Plots
+        // 1. Exact string match (e.g. "235", "155/1")
+        if (lowerNo === stripped || lowerNo === lower) {
+          score = 1000;
+          badge = p.canal_passing ? `Canal Acquired (${p.acquired_acres} ac)` : "Exact Match";
+          badgeVariant = p.canal_passing ? "affected" : "exact";
+        }
+        // 2. Exact numeric match (e.g. "Survey No. 235" or "235" matching plot 235)
+        else if (digitsOnly && pDigits === digitsOnly) {
+          score = 950;
+          badge = p.canal_passing ? `Canal Acquired (${p.acquired_acres} ac)` : "Exact Match";
+          badgeVariant = p.canal_passing ? "affected" : "exact";
+        }
+        // 3. Sub-division prefix (e.g. "155" matches "155/1", "155-A")
+        else if (stripped && (lowerNo.startsWith(stripped + "/") || lowerNo.startsWith(stripped + "-"))) {
+          score = 800;
+          badge = p.canal_passing ? `Canal Acquired (${p.acquired_acres} ac)` : "Sub-division";
+          badgeVariant = p.canal_passing ? "affected" : "retained";
+        }
+        // 4. Pattadar / Landowner Name search (e.g. "Ramanjaneyulu", "Anjaneya")
+        else if (p.pattadar_name && p.pattadar_name.toLowerCase().includes(lower)) {
+          score = 750;
+          badge = "Pattadar Match";
+          badgeVariant = "exact";
+        }
+        // 5. Khata Number search
+        else if (p.khata_no && p.khata_no.toLowerCase().includes(lower)) {
+          score = 700;
+          badge = "Khata Match";
+          badgeVariant = "retained";
+        }
+        // 6. Substring match inside Survey Number (e.g. "55" matches "155")
+        else if (stripped && lowerNo.includes(stripped)) {
+          score = 400;
+          badge = p.canal_passing ? `Canal Acquired (${p.acquired_acres} ac)` : undefined;
+          badgeVariant = p.canal_passing ? "affected" : "retained";
+        }
+        // 7. Keyword search: "canal", "affected", "row", "acquired"
+        else if (
+          (lower === "canal" || lower === "affected" || lower === "row" || lower === "acquired") &&
+          p.canal_passing
         ) {
-          results.push({
-            id: `plot-${p.survey_no}`,
+          score = 600;
+          badge = `Canal Acquired (${p.acquired_acres} ac)`;
+          badgeVariant = "affected";
+        }
+
+        if (score > 0) {
+          candidates.push({
+            id: `plot-${rawNo}`,
             type: "plot",
-            title: `Sy. No. ${p.survey_no}`,
-            subtitle: `${p.village}, ${p.mandal} • ${p.total_acres} ac ${
-              p.canal_passing ? `(${p.acquired_acres} ac acq)` : ""
-            }`,
-            badge: p.canal_passing ? "Canal Affected" : undefined,
+            title: `Survey Plot ${rawNo}`,
+            subtitle: `${p.village}, ${p.mandal} • ${p.land_nature || p.land_type || "Ryotwari Patta"}`,
+            extentText: `${p.total_acres} Ac (${p.total_ac_cts || ''})`,
+            ownerText: p.pattadar_name ? `Pattadar: ${p.pattadar_name}` : (p.khata_no ? `Khata: ${p.khata_no}` : undefined),
+            badge,
+            badgeVariant,
             plot: p,
             bounds: p.bounds,
+            score,
           });
         }
       });
     }
 
-    // 2. Chainage Markers
+    // 2. Chainage Markers along alignment
     if (projectData.layers?.chainage_markers?.features) {
       projectData.layers.chainage_markers.features.forEach((feat: any, idx: number) => {
         const title = feat.properties?.title || feat.properties?.chainage || "";
-        if (title.toLowerCase().includes(term)) {
+        const lowerTitle = title.toLowerCase();
+        if (lowerTitle.includes(lower) || (digitsOnly && lowerTitle.includes(digitsOnly))) {
           const coords = feat.geometry?.coordinates;
           if (coords && coords.length >= 2) {
-            results.push({
+            candidates.push({
               id: `chainage-${idx}`,
               type: "chainage",
               title,
-              subtitle: "Engineering Station Marker along Alignment",
+              subtitle: "Engineering Chainage Marker along Alignment",
               badge: "Chainage",
+              badgeVariant: "marker",
               bounds: [
                 [coords[1] - 0.001, coords[0] - 0.001],
                 [coords[1] + 0.001, coords[0] + 0.001],
               ],
+              score: 300,
             });
           }
         }
       });
     }
 
-    // 3. Structures
+    // 3. Hydraulic Structures (Culverts, Regulators)
     if (projectData.layers?.structures?.features) {
       projectData.layers.structures.features.forEach((feat: any, idx: number) => {
         const title = feat.properties?.title || "";
-        if (title.toLowerCase().includes(term)) {
+        if (title.toLowerCase().includes(lower)) {
           const coords = feat.geometry?.coordinates;
           if (coords && coords.length >= 2) {
-            results.push({
+            candidates.push({
               id: `struct-${idx}`,
               type: "structure",
               title,
               subtitle: "Hydraulic Canal Structure (Culvert / Regulator)",
               badge: "Structure",
+              badgeVariant: "marker",
               bounds: [
                 [coords[1] - 0.001, coords[0] - 0.001],
                 [coords[1] + 0.001, coords[0] + 0.001],
               ],
+              score: 250,
             });
           }
         }
       });
     }
 
-    return results.slice(0, 15);
+    // Sort descending by relevance score
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates.slice(0, 15);
   }, [searchTerm, projectData]);
 
   // Reset highlight index when query changes
@@ -211,13 +313,17 @@ export function CadastralHeader() {
 
   const handleSelectResult = useCallback(
     (item: SearchResultItem) => {
-      if (item.type === "plot" && item.plot) {
-        setSelectedPlot(item.plot);
-        setSearchTerm(`Survey No. ${item.plot.survey_no}`);
-      } else {
-        if (item.bounds) {
-          setTargetFlyToBounds(item.bounds);
+      if (item.type === "plot" || item.type === "road") {
+        if (item.plot) {
+          setSelectedPlot(item.plot);
         }
+      }
+      if (item.bounds) {
+        setTargetFlyToBounds(item.bounds);
+      }
+      if (item.plot) {
+        setSearchTerm(String(item.plot.survey_no));
+      } else {
         setSearchTerm(item.title);
       }
       setIsSearchOpen(false);
@@ -567,54 +673,88 @@ export function CadastralHeader() {
 
         {/* Search Results Dropdown */}
         {isSearchOpen && (
-          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden z-50 max-h-80 overflow-y-auto p-1.5 animate-in fade-in zoom-in-95 duration-100">
-            <div className="px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider text-slate-400 border-b border-slate-100 flex justify-between font-bold">
+          <div className="absolute top-full left-0 mt-1.5 w-84 sm:w-[420px] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto p-1.5 animate-in fade-in zoom-in-95 duration-100">
+            <div className="px-3.5 py-2 text-[10px] uppercase font-mono tracking-wider text-slate-500 border-b border-slate-100 flex items-center justify-between font-bold bg-slate-50/70">
               <span>Matching Spatial Features</span>
-              <span>{searchResults.length} found</span>
+              <span className="px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700 text-[9px] font-bold">
+                {searchResults.length} Found
+              </span>
             </div>
 
             {searchResults.length > 0 ? (
-              <div className="py-1 space-y-0.5">
+              <div className="py-1 space-y-1">
                 {searchResults.map((item, idx) => (
                   <button
                     key={`${item.id}-${idx}`}
                     onClick={() => handleSelectResult(item)}
-                    className={`w-full px-3 py-2 rounded-lg text-left flex items-center justify-between text-xs transition-colors ${
+                    className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between text-xs transition-all border ${
                       idx === selectedIndex
-                        ? "bg-blue-50 text-blue-900 font-semibold"
-                        : "hover:bg-slate-50 text-slate-700"
+                        ? "bg-blue-50/80 border-blue-200 text-blue-950 shadow-2xs"
+                        : "border-transparent hover:bg-slate-50/90 text-slate-700"
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-5 h-5 rounded-md bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
-                        {item.type === "plot" && <Layers className="w-3 h-3 text-blue-600" />}
-                        {item.type === "chainage" && <MapPin className="w-3 h-3 text-emerald-600" />}
-                        {item.type === "structure" && <Compass className="w-3 h-3 text-purple-600" />}
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1 pr-2">
+                      <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 shrink-0 mt-0.5">
+                        {item.type === "plot" && <Layers className="w-3.5 h-3.5 text-blue-600" />}
+                        {item.type === "road" && <Navigation className="w-3.5 h-3.5 text-amber-600" />}
+                        {item.type === "chainage" && <MapPin className="w-3.5 h-3.5 text-emerald-600" />}
+                        {item.type === "structure" && <Compass className="w-3.5 h-3.5 text-purple-600" />}
                       </div>
-                      <div className="truncate">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-slate-900 truncate">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-bold text-slate-900 text-[13px]">
                             {item.title}
                           </span>
                           {item.badge && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            <span
+                              className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border shrink-0 ${
+                                item.badgeVariant === "exact"
+                                  ? "bg-blue-100 text-blue-800 border-blue-200"
+                                  : item.badgeVariant === "affected"
+                                  ? "bg-rose-100 text-rose-800 border-rose-200"
+                                  : item.badgeVariant === "road"
+                                  ? "bg-amber-100 text-amber-800 border-amber-200"
+                                  : item.badgeVariant === "marker"
+                                  ? "bg-purple-100 text-purple-800 border-purple-200"
+                                  : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                              }`}
+                            >
                               {item.badge}
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-sans truncate">
+
+                        {/* Location & Classification */}
+                        <div className="text-[11px] text-slate-500 font-sans truncate mt-0.5">
                           {item.subtitle}
                         </div>
+
+                        {/* Detailed Extent & Landowner line */}
+                        {(item.extentText || item.ownerText) && (
+                          <div className="text-[10px] text-slate-600 font-sans flex items-center gap-2 mt-0.5 flex-wrap">
+                            {item.extentText && (
+                              <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded">
+                                {item.extentText}
+                              </span>
+                            )}
+                            {item.ownerText && (
+                              <span className="text-slate-500 truncate max-w-[200px]">
+                                {item.ownerText}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider shrink-0 pl-2">
+                    <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider shrink-0 bg-blue-50 border border-blue-200/80 px-2 py-1 rounded-md shadow-2xs group-hover:bg-blue-600 group-hover:text-white transition-colors">
                       Locate
                     </div>
                   </button>
                 ))}
               </div>
             ) : searchTerm.trim() ? (
-              <div className="px-3 py-4 text-center text-xs text-slate-400 font-sans">
+              <div className="px-3 py-6 text-center text-xs text-slate-400 font-sans">
+                <Search className="w-5 h-5 mx-auto text-slate-300 mb-1.5" />
                 No matching survey plots or features found for &ldquo;{searchTerm}&rdquo;
               </div>
             ) : null}
