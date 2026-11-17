@@ -186,18 +186,18 @@ export function SystemStatusDot() {
 
       {/* Hover & Click Popover Card */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3.5 z-50 text-slate-800 animate-in fade-in zoom-in-95 duration-150">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div className="absolute right-0 top-full mt-2 w-80 sm:w-[350px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 text-slate-800 whitespace-normal break-words animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 font-mono">
               System & Spatial Status
             </span>
             <span
-              className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+              className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-tight whitespace-nowrap ${
                 backendState === "online" || backendState === "kaboom"
-                  ? "bg-emerald-100 text-emerald-800"
+                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                   : backendState === "waking"
-                  ? "bg-amber-100 text-amber-800"
-                  : "bg-rose-100 text-rose-800"
+                  ? "bg-amber-100 text-amber-800 border border-amber-200"
+                  : "bg-rose-100 text-rose-800 border border-rose-200"
               }`}
             >
               {backendState === "online" || backendState === "kaboom"
@@ -208,31 +208,31 @@ export function SystemStatusDot() {
             </span>
           </div>
 
-          <div className="py-2.5 space-y-2.5">
+          <div className="py-3 space-y-3">
             {/* Status Item 1: Spatial Topology */}
-            <div className="flex items-start gap-2.5">
-              <div className="w-6 h-6 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                <Activity className="w-3.5 h-3.5" />
+            <div className="flex items-start gap-3">
+              <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                <Activity className="w-4 h-4" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <span>Topology Synced</span>
                   {topologySynced && (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   )}
                 </div>
-                <div className="text-[10px] text-slate-500 leading-snug">
+                <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5 whitespace-normal break-words">
                   {topologySynced
                     ? `${plotsCount} cadastral parcels & canal alignment indexed via Shapely + R-tree.`
                     : "Spatial overlay ready; select a project to inspect topology."}
-                </div>
+                </p>
               </div>
             </div>
 
             {/* Status Item 2: Backend Compute Service */}
-            <div className="flex items-start gap-2.5">
+            <div className="flex items-start gap-3">
               <div
-                className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 mt-0.5 ${
+                className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 shadow-2xs ${
                   backendState === "online" || backendState === "kaboom"
                     ? "bg-emerald-50 border-emerald-200 text-emerald-600"
                     : backendState === "waking"
@@ -240,19 +240,19 @@ export function SystemStatusDot() {
                     : "bg-rose-50 border-rose-200 text-rose-600"
                 }`}
               >
-                <Server className="w-3.5 h-3.5" />
+                <Server className="w-4 h-4" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <span>Compute Engine (Render)</span>
                 </div>
-                <div className="text-[10px] text-slate-500 leading-snug">
+                <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5 whitespace-normal break-words">
                   {backendState === "online" || backendState === "kaboom"
                     ? "Online • ODA DWG/DXF converter & land plan schedule ingestion active."
                     : backendState === "waking"
                     ? `Waking up compute container... (${secondsElapsed}s elapsed)`
                     : "Sleeping on free tier. Tap below to wake up container."}
-                </div>
+                </p>
               </div>
             </div>
           </div>
